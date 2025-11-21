@@ -2,8 +2,10 @@ import pandas as pd
 import os
 import streamlit as st
 
-# 核心配置：文件夹路径
-folder_path = r"C:\Users\minfa\Desktop\生产看板数据"
+# 核心配置：文件夹路径（线上部署时需改为GitHub仓库中的相对路径）
+# 本地测试用：folder_path = r"C:\Users\minfa\Desktop\生产看板数据"
+# 线上部署用（GitHub仓库相对路径）：
+folder_path = "生产看板数据"
 
 # 供应商-环节-字段映射
 supplier_process_field_map = {
@@ -38,20 +40,23 @@ supplier_process_map = {
     "全部": ["BP_加工中", "BP_已完成", "ASY_加工中", "ASY_已完成", "FT_来料仓未测试", "FT_WIP", "FT_成品库存"]
 }
 
-# ---------------------- 1. 禾芯数据提取 ----------------------
+# ---------------------- 1. 禾芯数据提取（支持任意日期的.xlsx文件） ----------------------
 def process_hexin(results):
     hexin_data = pd.DataFrame()
-    hexin_files = [f for f in os.listdir(folder_path) if f.split('.')[0].isdigit() and f.endswith('.xls')]
+    # 筛选规则：文件名以数字开头 + 扩展名.xlsx
+    hexin_files = [f for f in os.listdir(folder_path) 
+                   if f.split('.')[0].isdigit() and f.endswith('.xlsx')]
     for file_name in hexin_files:
         file_path = os.path.join(folder_path, file_name)
         try:
-            df_wip = pd.read_excel(file_path, sheet_name="wip", header=0, engine='xlrd')
+            # 读取.xlsx需用openpyxl引擎
+            df_wip = pd.read_excel(file_path, sheet_name="wip", header=0, engine='openpyxl')
             wip_extracted = df_wip.iloc[:, [1, 5, 7]].copy()
             wip_extracted.columns = ['批次号/LOT NO', '晶圆型号/WAFER DEVICE', '晶圆数量/WAFER QTY']
             wip_extracted['供应商'] = '禾芯'
             wip_extracted['环节'] = 'BP_加工中'
 
-            df_fin = pd.read_excel(file_path, sheet_name="Finished Products", header=0, engine='xlrd')
+            df_fin = pd.read_excel(file_path, sheet_name="Finished Products", header=0, engine='openpyxl')
             fin_extracted = df_fin.iloc[:, [1, 2, 3, 4]].copy()
             fin_extracted.columns = ['晶圆型号/WAFER DEVICE', '入库日期', '芯片数量/GOOD DIE QTY', '批次号/LOT NO']
             fin_extracted['供应商'] = '禾芯'
@@ -63,20 +68,23 @@ def process_hexin(results):
             results.append({"file": file_name, "status": "error", "msg": f"禾芯文件《{file_name}》提取失败：{str(e)}"})
     return hexin_data
 
-# ---------------------- 2. 日荣数据提取 ----------------------
+# ---------------------- 2. 日荣数据提取（支持任意日期的ITS开头.xlsx文件） ----------------------
 def process_rirong(results):
     rirong_data = pd.DataFrame()
-    rirong_files = [f for f in os.listdir(folder_path) if f.startswith('ITS') and f.endswith('.xls')]
+    # 筛选规则：文件名以ITS开头 + 扩展名.xlsx
+    rirong_files = [f for f in os.listdir(folder_path) 
+                   if f.startswith('ITS') and f.endswith('.xlsx')]
     for file_name in rirong_files:
         file_path = os.path.join(folder_path, file_name)
         try:
-            df_wip = pd.read_excel(file_path, sheet_name="ATX WIP", header=None, engine='xlrd')
+            # 读取.xlsx需用openpyxl引擎
+            df_wip = pd.read_excel(file_path, sheet_name="ATX WIP", header=None, engine='openpyxl')
             wip_extracted = df_wip.iloc[6:, [1, 4, 7, 12]].copy() if len(df_wip) > 6 else pd.DataFrame(columns=[1, 4, 7, 12])
             wip_extracted.columns = ['芯片名称/DEVICE NAME', '批次号/LOT NO', '封装订单号/ASY PO', '开始时间/START TIME']
             wip_extracted['供应商'] = '日荣'
             wip_extracted['环节'] = 'ASY_加工中'
 
-            df_fg = pd.read_excel(file_path, sheet_name="ATX FG", header=None, engine='xlrd')
+            df_fg = pd.read_excel(file_path, sheet_name="ATX FG", header=None, engine='openpyxl')
             fg_extracted = df_fg.iloc[6:, [1, 2, 8, 13]].copy() if len(df_fg) > 6 else pd.DataFrame(columns=[1, 2, 8, 13])
             fg_extracted.columns = ['已加工完成芯片数量', '批次号/LOT NO', '芯片名称/DEVICE NAME', '封装周码/DATE CODE']
             fg_extracted['供应商'] = '日荣'
@@ -206,11 +214,8 @@ def main():
     process = st.sidebar.selectbox("选择环节", process_list)
     
     # 添加批次号筛选
-    # 获取所有非空的批次号
     all_lot_numbers = all_data['批次号/LOT NO'].dropna().unique().tolist()
-    all_lot_numbers = sorted([lot for lot in all_lot_numbers if lot])  # 过滤掉空值和None
-    
-    # 添加"全部"选项
+    all_lot_numbers = sorted([lot for lot in all_lot_numbers if lot])
     lot_number_list = ["全部"] + all_lot_numbers
     selected_lot = st.sidebar.selectbox("选择批次号", lot_number_list)
 
@@ -224,42 +229,33 @@ def main():
 
     target_columns = get_target_columns(supplier, process)
 
-    # 处理筛选后数据：添加序号列并确保无多余索引
     if filtered_data.empty:
         filtered_data = pd.DataFrame(columns=target_columns)
     else:
         filtered_data = filtered_data.reindex(columns=target_columns).reset_index(drop=True)
-        filtered_data.insert(0, "序号", range(1, len(filtered_data) + 1))  # 序号从1开始，列名"序号"
+        filtered_data.insert(0, "序号", range(1, len(filtered_data) + 1))
 
     st.subheader("📋 筛选后数据")
-    # 使用自定义CSS类来加粗表头，并隐藏索引列（只显示序号列）
     st.dataframe(filtered_data, use_container_width=True, hide_index=True)
 
-    # 处理全部数据：添加序号列并确保无多余索引
     with st.expander("查看全部数据", expanded=False):
         all_target_columns = supplier_process_field_map[supplier]["全部"] if supplier != "全部" else supplier_process_field_map["全部"]["全部"]
         if all_data.empty:
             all_display_data = pd.DataFrame(columns=all_target_columns)
         else:
             all_display_data = all_data.reindex(columns=all_target_columns).reset_index(drop=True)
-            all_display_data.insert(0, "序号", range(1, len(all_display_data) + 1))  # 序号从1开始，列名"序号"
-        # 使用自定义CSS类来加粗表头，并隐藏索引列（只显示序号列）
+            all_display_data.insert(0, "序号", range(1, len(all_display_data) + 1))
         st.dataframe(all_display_data, use_container_width=True, hide_index=True)
 
-    # 添加批次号追踪功能
     if selected_lot != "全部":
         st.subheader(f"🔍 批次号追踪: {selected_lot}")
         lot_tracking_data = all_data[all_data['批次号/LOT NO'] == selected_lot].copy()
         
         if not lot_tracking_data.empty:
-            # 添加序号
             lot_tracking_data = lot_tracking_data.reset_index(drop=True)
             lot_tracking_data.insert(0, "序号", range(1, len(lot_tracking_data) + 1))
-            
-            # 显示批次号在所有环节的状况
             st.dataframe(lot_tracking_data, use_container_width=True, hide_index=True)
             
-            # 显示批次号状态概览
             st.write("**批次状态概览:**")
             for _, row in lot_tracking_data.iterrows():
                 st.write(f"- {row['供应商']} | {row['环节']}")
