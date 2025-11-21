@@ -1,3 +1,4 @@
-streamlit
 pandas
-openpyxl  # 如果涉及Excel读取，需添加
+streamlit
+xlrd
+openpyxl
