@@ -15,9 +15,11 @@ supplier_process_field_map = {
         "全部": ['供应商', '环节', '批次号/LOT NO', '晶圆型号/WAFER DEVICE', '晶圆数量/WAFER QTY', '入库日期', '芯片数量/GOOD DIE QTY']
     },
     "日荣": {
-        "ASY_加工中": ['供应商', '环节', '芯片名称/DEVICE NAME', '批次号/LOT NO', '封装订单号/ASY PO', '开始时间/START TIME'],
+        "ASY_加工中": ['供应商', '环节', '芯片名称/DEVICE NAME', '批次号/LOT NO', '封装订单号/ASY PO', '开始时间/START TIME', 
+                     '下单数量/ORDER QTY', '当前环节', '当前数量/WIP QTY'],
         "ASY_已完成": ['供应商', '环节', '已加工完成芯片数量', '批次号/LOT NO', '芯片名称/DEVICE NAME', '封装周码/DATE CODE'],
-        "全部": ['供应商', '环节', '芯片名称/DEVICE NAME', '批次号/LOT NO', '封装订单号/ASY PO', '开始时间/START TIME', '已加工完成芯片数量', '封装周码/DATE CODE']
+        "全部": ['供应商', '环节', '芯片名称/DEVICE NAME', '批次号/LOT NO', '封装订单号/ASY PO', '开始时间/START TIME', 
+               '下单数量/ORDER QTY', '当前环节', '当前数量/WIP QTY', '已加工完成芯片数量', '封装周码/DATE CODE']
     },
     "弘润": {
         "FT_来料仓未测试": ['供应商', '环节', '芯片名称/DEVICE NAME', '批次号/LOT NO', '来料数量/IM QTY'],
@@ -27,8 +29,8 @@ supplier_process_field_map = {
     },
     "全部": {
         "全部": ['供应商', '环节', '批次号/LOT NO', '晶圆型号/WAFER DEVICE', '晶圆数量/WAFER QTY', '入库日期', '芯片数量/GOOD DIE QTY', 
-                 '芯片名称/DEVICE NAME', '封装订单号/ASY PO', '开始时间/START TIME', '已加工完成芯片数量', '封装周码/DATE CODE',
-                 '测试订单号/FT PO', '测试类型/FT\\RT', '当前数量/WIP QTY', 'BIN别/BIN', '来料数量/IM QTY', '库存数量']
+                 '芯片名称/DEVICE NAME', '封装订单号/ASY PO', '开始时间/START TIME', '下单数量/ORDER QTY', '当前环节', '当前数量/WIP QTY',
+                 '已加工完成芯片数量', '封装周码/DATE CODE', '测试订单号/FT PO', '测试类型/FT\\RT', 'BIN别/BIN', '来料数量/IM QTY', '库存数量']
     }
 }
 
@@ -77,13 +79,54 @@ def process_rirong(results):
     for file_name in rirong_files:
         file_path = os.path.join(folder_path, file_name)
         try:
-            # 读取.xlsx需用openpyxl引擎
+            # 读取ATX WIP表
             df_wip = pd.read_excel(file_path, sheet_name="ATX WIP", header=None, engine='openpyxl')
-            wip_extracted = df_wip.iloc[6:, [1, 4, 7, 12]].copy() if len(df_wip) > 6 else pd.DataFrame(columns=[1, 4, 7, 12])
-            wip_extracted.columns = ['芯片名称/DEVICE NAME', '批次号/LOT NO', '封装订单号/ASY PO', '开始时间/START TIME']
+            
+            # 获取环节列的范围 (N到W列，索引13-22)
+            process_columns = list(range(13, 23))  # N到W列
+            
+            # 获取环节名称 (第6行，索引5)
+            process_names = df_wip.iloc[5, process_columns].tolist()
+            
+            # 提取基本数据 (从第7行开始，索引6)
+            wip_extracted = df_wip.iloc[6:, [1, 4, 7, 9, 12]].copy()  # 增加J列(索引9) - 下单数量
+            wip_extracted.columns = ['芯片名称/DEVICE NAME', '批次号/LOT NO', '封装订单号/ASY PO', 
+                                    '下单数量/ORDER QTY', '开始时间/START TIME']
+            
+            # 提取环节数量数据
+            process_data = df_wip.iloc[6:, process_columns].copy()
+            
+            # 为每一行确定当前环节和数量
+            current_processes = []
+            current_qtys = []
+            
+            for idx, row in process_data.iterrows():
+                # 找到有数量的环节
+                non_zero_cols = []
+                for i, val in enumerate(row):
+                    try:
+                        if pd.notna(val) and float(val) != 0:
+                            non_zero_cols.append((i, val))
+                    except (ValueError, TypeError):
+                        continue
+                
+                if non_zero_cols:
+                    # 如果有多个环节有数量，取第一个
+                    col_idx, qty = non_zero_cols[0]
+                    current_processes.append(process_names[col_idx])
+                    current_qtys.append(qty)
+                else:
+                    current_processes.append("")
+                    current_qtys.append(0)
+            
+            # 添加环节信息到数据中
+            wip_extracted['当前环节'] = current_processes
+            wip_extracted['当前数量/WIP QTY'] = current_qtys
+            
             wip_extracted['供应商'] = '日荣'
             wip_extracted['环节'] = 'ASY_加工中'
 
+            # 读取ATX FG表
             df_fg = pd.read_excel(file_path, sheet_name="ATX FG", header=None, engine='openpyxl')
             fg_extracted = df_fg.iloc[6:, [1, 2, 8, 13]].copy() if len(df_fg) > 6 else pd.DataFrame(columns=[1, 2, 8, 13])
             fg_extracted.columns = ['已加工完成芯片数量', '批次号/LOT NO', '芯片名称/DEVICE NAME', '封装周码/DATE CODE']
@@ -91,7 +134,7 @@ def process_rirong(results):
             fg_extracted['环节'] = 'ASY_已完成'
 
             rirong_data = pd.concat([rirong_data, wip_extracted, fg_extracted], ignore_index=True)
-            results.append({"file": file_name, "status": "success", "msg": f"日荣文件《{file_name}》提取成功！（已从第7行开始读取表体）"})
+            results.append({"file": file_name, "status": "success", "msg": f"日荣文件《{file_name}》提取成功！（已增加环节信息）"})
         except Exception as e:
             results.append({"file": file_name, "status": "error", "msg": f"日荣文件《{file_name}》提取失败：{str(e)}"})
     
@@ -218,6 +261,15 @@ def main():
     all_lot_numbers = sorted([lot for lot in all_lot_numbers if lot])
     lot_number_list = ["全部"] + all_lot_numbers
     selected_lot = st.sidebar.selectbox("选择批次号", lot_number_list)
+    
+    # 添加环节筛选（仅当日荣ASY_加工中时显示）
+    if supplier == "日荣" and process == "ASY_加工中":
+        all_processes = all_data[all_data['供应商'] == '日荣']['当前环节'].dropna().unique().tolist()
+        all_processes = sorted([p for p in all_processes if p])
+        process_list = ["全部"] + all_processes
+        selected_process = st.sidebar.selectbox("选择当前环节", process_list)
+    else:
+        selected_process = "全部"
 
     filtered_data = all_data.copy()
     if supplier != "全部":
@@ -226,6 +278,8 @@ def main():
         filtered_data = filtered_data[filtered_data['环节'] == process]
     if selected_lot != "全部":
         filtered_data = filtered_data[filtered_data['批次号/LOT NO'] == selected_lot]
+    if selected_process != "全部" and supplier == "日荣" and process == "ASY_加工中":
+        filtered_data = filtered_data[filtered_data['当前环节'] == selected_process]
 
     target_columns = get_target_columns(supplier, process)
 
@@ -237,6 +291,15 @@ def main():
 
     st.subheader("📋 筛选后数据")
     st.dataframe(filtered_data, use_container_width=True, hide_index=True)
+
+    # 日荣ASY_加工中环节的环节统计
+    if supplier == "日荣" and process == "ASY_加工中":
+        if not filtered_data.empty and '当前环节' in filtered_data.columns:
+            st.subheader("📊 日荣ASY环节统计")
+            process_stats = filtered_data.groupby('当前环节')['当前数量/WIP QTY'].sum().reset_index()
+            process_stats.columns = ['环节', '总数量']
+            process_stats = process_stats.sort_values('总数量', ascending=False)
+            st.dataframe(process_stats, use_container_width=True, hide_index=True)
 
     with st.expander("查看全部数据", expanded=False):
         all_target_columns = supplier_process_field_map[supplier]["全部"] if supplier != "全部" else supplier_process_field_map["全部"]["全部"]
@@ -258,7 +321,10 @@ def main():
             
             st.write("**批次状态概览:**")
             for _, row in lot_tracking_data.iterrows():
-                st.write(f"- {row['供应商']} | {row['环节']}")
+                status_info = f"- {row['供应商']} | {row['环节']}"
+                if row['供应商'] == '日荣' and row['环节'] == 'ASY_加工中' and '当前环节' in row:
+                    status_info += f" | 当前环节: {row['当前环节']} | 数量: {row['当前数量/WIP QTY']}"
+                st.write(status_info)
         else:
             st.info(f"未找到批次号 {selected_lot} 的相关数据")
 
