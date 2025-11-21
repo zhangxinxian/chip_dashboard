@@ -2,12 +2,8 @@ import pandas as pd
 import os
 import streamlit as st
 
-# 使用相对路径，这样部署后也能找到文件
-folder_path = "生产看板数据"
-
-# 如果文件夹不存在就创建（部署时可能需要）
-if not os.path.exists(folder_path):
-    os.makedirs(folder_path)
+# 核心配置：文件夹路径
+folder_path = r"C:\Users\minfa\Desktop\生产看板数据"
 
 # 供应商-环节-字段映射
 supplier_process_field_map = {
@@ -169,8 +165,7 @@ def main():
     load_css()
 
     if not os.path.exists(folder_path):
-        st.error(f"❌ 数据文件夹不存在！请确认路径：{folder_path}")
-        st.info("💡 请确保在同一个目录下有'生产看板数据'文件夹，并且里面包含所需的Excel文件")
+        st.error(f"❌ 文件夹不存在！请确认路径：{folder_path}")
         return
 
     results = []
@@ -211,8 +206,11 @@ def main():
     process = st.sidebar.selectbox("选择环节", process_list)
     
     # 添加批次号筛选
+    # 获取所有非空的批次号
     all_lot_numbers = all_data['批次号/LOT NO'].dropna().unique().tolist()
-    all_lot_numbers = sorted([lot for lot in all_lot_numbers if lot])
+    all_lot_numbers = sorted([lot for lot in all_lot_numbers if lot])  # 过滤掉空值和None
+    
+    # 添加"全部"选项
     lot_number_list = ["全部"] + all_lot_numbers
     selected_lot = st.sidebar.selectbox("选择批次号", lot_number_list)
 
@@ -226,36 +224,42 @@ def main():
 
     target_columns = get_target_columns(supplier, process)
 
-    # 处理筛选后数据
+    # 处理筛选后数据：添加序号列并确保无多余索引
     if filtered_data.empty:
         filtered_data = pd.DataFrame(columns=target_columns)
     else:
         filtered_data = filtered_data.reindex(columns=target_columns).reset_index(drop=True)
-        filtered_data.insert(0, "序号", range(1, len(filtered_data) + 1))
+        filtered_data.insert(0, "序号", range(1, len(filtered_data) + 1))  # 序号从1开始，列名"序号"
 
     st.subheader("📋 筛选后数据")
+    # 使用自定义CSS类来加粗表头，并隐藏索引列（只显示序号列）
     st.dataframe(filtered_data, use_container_width=True, hide_index=True)
 
-    # 全部数据
+    # 处理全部数据：添加序号列并确保无多余索引
     with st.expander("查看全部数据", expanded=False):
         all_target_columns = supplier_process_field_map[supplier]["全部"] if supplier != "全部" else supplier_process_field_map["全部"]["全部"]
         if all_data.empty:
             all_display_data = pd.DataFrame(columns=all_target_columns)
         else:
             all_display_data = all_data.reindex(columns=all_target_columns).reset_index(drop=True)
-            all_display_data.insert(0, "序号", range(1, len(all_display_data) + 1))
+            all_display_data.insert(0, "序号", range(1, len(all_display_data) + 1))  # 序号从1开始，列名"序号"
+        # 使用自定义CSS类来加粗表头，并隐藏索引列（只显示序号列）
         st.dataframe(all_display_data, use_container_width=True, hide_index=True)
 
-    # 批次号追踪
+    # 添加批次号追踪功能
     if selected_lot != "全部":
         st.subheader(f"🔍 批次号追踪: {selected_lot}")
         lot_tracking_data = all_data[all_data['批次号/LOT NO'] == selected_lot].copy()
         
         if not lot_tracking_data.empty:
+            # 添加序号
             lot_tracking_data = lot_tracking_data.reset_index(drop=True)
             lot_tracking_data.insert(0, "序号", range(1, len(lot_tracking_data) + 1))
+            
+            # 显示批次号在所有环节的状况
             st.dataframe(lot_tracking_data, use_container_width=True, hide_index=True)
             
+            # 显示批次号状态概览
             st.write("**批次状态概览:**")
             for _, row in lot_tracking_data.iterrows():
                 st.write(f"- {row['供应商']} | {row['环节']}")
