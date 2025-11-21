@@ -1,4 +1,10 @@
+<<<<<<< HEAD
 pandas
 streamlit
 xlrd>=2.0.1
+=======
+pandas
+streamlit
+xlrd>=2.0.1
+>>>>>>> 3207c259b1f30cb03217cf4af4e489d779246431
 openpyxl
