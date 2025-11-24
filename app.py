@@ -12,16 +12,17 @@ import shutil
 # 核心配置：文件夹路径
 folder_path = "生产看板数据"
 
-# 获取稳定的用户数据文件路径
+# ===================== 用户数据持久化核心逻辑 =====================
 def get_users_file_path():
-    home_dir = Path.home()
+    """获取用户数据文件的稳定路径（系统用户目录下的隐藏文件夹）"""
+    home_dir = Path.home()  # 自动获取当前系统的用户主目录
     app_data_dir = home_dir / ".chip_production_dashboard"
-    app_data_dir.mkdir(exist_ok=True)
+    app_data_dir.mkdir(exist_ok=True)  # 确保文件夹存在
     users_file = app_data_dir / "users.json"
     return users_file
 
-# 初始化用户数据（确保现有数据不被覆盖）
 def initialize_users():
+    """初始化用户数据：仅当文件不存在时创建默认用户，否则加载现有数据"""
     users_file = get_users_file_path()
     default_users = {
         "xinxian.zhang@intchains.com": {
@@ -29,9 +30,13 @@ def initialize_users():
             "permissions": ["view", "export", "manage_users", "change_password"]
         }
     }
+    
+    # 若文件不存在，创建默认用户并保存
     if not users_file.exists():
         save_users(default_users)
         return default_users
+    
+    # 若文件存在，加载现有用户数据
     try:
         with open(users_file, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -41,6 +46,7 @@ def initialize_users():
         return default_users
 
 def save_users(users_data):
+    """保存用户数据到文件"""
     try:
         users_file = get_users_file_path()
         with open(users_file, 'w', encoding='utf-8') as f:
@@ -51,9 +57,11 @@ def save_users(users_data):
         return False
 
 def get_users():
+    """获取所有用户数据"""
     return initialize_users()
 
 def update_user_password(username, new_password_hash):
+    """更新用户密码"""
     users_data = get_users()
     if username in users_data:
         users_data[username]["password_hash"] = new_password_hash
@@ -61,6 +69,7 @@ def update_user_password(username, new_password_hash):
     return False
 
 def add_new_user(username, password_hash, permissions):
+    """添加新用户"""
     users_data = get_users()
     if username in users_data:
         return False, "用户名已存在"
@@ -74,6 +83,7 @@ def add_new_user(username, password_hash, permissions):
         return False, "用户添加失败"
 
 def delete_user(username):
+    """删除用户（不能删除当前登录用户）"""
     users_data = get_users()
     if username in users_data and username != st.session_state.username:
         del users_data[username]
@@ -81,23 +91,26 @@ def delete_user(username):
     return False
 
 def get_user_permissions(username):
+    """获取用户权限"""
     users_data = get_users()
     if username in users_data:
         return users_data[username].get("permissions", [])
     return []
 
 def check_permission(username, permission):
+    """检查用户是否有指定权限"""
     permissions = get_user_permissions(username)
     return permission in permissions
 
 def authenticate_user(username, password):
+    """验证用户登录"""
     users_data = get_users()
     hashed_password = hashlib.sha256(password.encode()).hexdigest()
     if username in users_data and users_data[username]["password_hash"] == hashed_password:
         return True
     return False
 
-# 供应商-环节-字段映射
+# ===================== 业务逻辑（供应商-环节-字段映射） =====================
 supplier_process_field_map = {
     "禾芯": {
         "BP_加工中": ['供应商', '环节', '批次号/LOT NO', '晶圆型号/WAFER DEVICE', '晶圆数量/WAFER QTY'],
@@ -131,12 +144,13 @@ supplier_process_map = {
     "全部": ["BP_加工中", "BP_已完成", "ASY_加工中", "ASY_已完成", "FT_来料仓未测试", "FT_WIP", "FT_成品库存"]
 }
 
-# ---------------------- 登录页面 ----------------------
+# ===================== 页面逻辑（登录、个人中心、用户管理） =====================
 def login_page():
+    """登录页面"""
     st.set_page_config(
         page_title="芯片生产看板 - 登录", 
         layout="centered",
-        page_icon="intchains_logo.png"  # 浏览器标签图标（若需保留可继续使用，无需修改）
+        page_icon="intchains_logo.png"  # 若需保留浏览器标签图标，确保图标文件存在
     )
     st.title("🔐 芯片生产看板 - 用户登录")
     with st.form("login_form"):
@@ -154,8 +168,8 @@ def login_page():
             else:
                 st.error("用户名或密码错误！")
 
-# ---------------------- 个人账户页面 ----------------------
 def personal_account_page():
+    """个人账户页面"""
     st.subheader("👤 个人账户")
     st.write(f"**用户名:** {st.session_state.username}")
     st.write("---")
@@ -183,8 +197,8 @@ def personal_account_page():
             else:
                 st.error("密码修改失败！")
 
-# ---------------------- 用户管理页面 ----------------------
 def user_management_page():
+    """用户管理页面"""
     st.subheader("👥 用户管理")
     users_data = get_users()
     st.write("### 当前用户列表")
@@ -233,8 +247,9 @@ def user_management_page():
         else:
             st.error("删除用户失败")
 
-# ---------------------- 生产看板页面 ----------------------
+# ===================== 生产看板页面逻辑 =====================
 def dashboard_page():
+    """生产看板页面"""
     if not os.path.exists(folder_path):
         st.error(f"❌ 文件夹不存在！请确认路径：{folder_path}")
         return
@@ -333,8 +348,9 @@ def dashboard_page():
         else:
             st.info(f"未找到批次号 {selected_lot} 的相关数据")
 
-# ---------------------- 数据提取函数 ----------------------
+# ===================== 数据提取函数 =====================
 def process_hexin(results):
+    """处理禾芯数据"""
     hexin_data = pd.DataFrame()
     hexin_files = [f for f in os.listdir(folder_path) 
                    if f.split('.')[0].isdigit() and f.endswith('.xlsx')]
@@ -358,6 +374,7 @@ def process_hexin(results):
     return hexin_data
 
 def process_rirong(results):
+    """处理日荣数据"""
     rirong_data = pd.DataFrame()
     rirong_files = [f for f in os.listdir(folder_path) 
                    if f.startswith('ITS') and f.endswith('.xlsx')]
@@ -412,6 +429,7 @@ def process_rirong(results):
     return rirong_data
 
 def process_hongrun(results):
+    """处理弘润数据"""
     hongrun_data = pd.DataFrame()
     hongrun_files = [f for f in os.listdir(folder_path) if 'CNEIC' in f and f.endswith('.xlsx')]
     for file_name in hongrun_files:
@@ -446,6 +464,7 @@ def process_hongrun(results):
     return hongrun_data
 
 def get_target_columns(supplier, process):
+    """获取目标字段"""
     if supplier == "全部" and process == "全部":
         return supplier_process_field_map["全部"]["全部"]
     elif supplier == "全部":
@@ -457,6 +476,7 @@ def get_target_columns(supplier, process):
         return supplier_process_field_map[supplier][process]
 
 def load_css():
+    """加载自定义CSS"""
     st.markdown("""
     <style>
     .bold-header th {
@@ -474,17 +494,20 @@ def load_css():
     </style>
     """, unsafe_allow_html=True)
 
-# ---------------------- 主应用 ----------------------
+# ===================== 主应用逻辑 =====================
 def main_app():
+    """主应用页面"""
     st.set_page_config(
         page_title="芯片生产看板", 
         layout="wide",
-        page_icon="intchains_logo.png"  # 浏览器标签图标（若需保留可继续使用，无需修改）
+        page_icon="intchains_logo.png"  # 若需保留浏览器标签图标，确保图标文件存在
     )
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "dashboard"
-    # 仅保留文字标题，移除图标
+    
+    # 标题（仅文字，无图标）
     st.title("芯片运营生产看板")
+    
     col3 = st.columns([1])[0]
     with col3:
         if st.button("🚪 退出登录"):
@@ -492,8 +515,10 @@ def main_app():
             st.session_state.username = None
             st.session_state.current_page = "dashboard"
             st.rerun()
+    
     st.write(f"👤 当前用户: **{st.session_state.username}**")
     load_css()
+    
     st.sidebar.header("📱 导航")
     col1, col2 = st.sidebar.columns(2)
     with col1:
@@ -504,10 +529,12 @@ def main_app():
         if st.button("👤 个人账户", use_container_width=True):
             st.session_state.current_page = "personal_account"
             st.rerun()
+    
     if check_permission(st.session_state.username, "manage_users"):
         if st.sidebar.button("👥 用户管理", use_container_width=True):
             st.session_state.current_page = "user_management"
             st.rerun()
+    
     if st.session_state.current_page == "dashboard":
         dashboard_page()
     elif st.session_state.current_page == "personal_account":
@@ -515,14 +542,16 @@ def main_app():
     elif st.session_state.current_page == "user_management":
         user_management_page()
 
-# ---------------------- 主函数 ----------------------
+# ===================== 主函数 =====================
 def main():
+    """主函数：控制登录状态和页面切换"""
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
     if 'username' not in st.session_state:
         st.session_state.username = None
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "dashboard"
+    
     if not st.session_state.logged_in:
         login_page()
     else:
