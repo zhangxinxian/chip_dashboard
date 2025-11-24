@@ -29,11 +29,9 @@ def initialize_users():
             "permissions": ["view", "export", "manage_users", "change_password"]
         }
     }
-    # 仅当文件不存在时，才创建默认用户（避免覆盖现有数据）
     if not users_file.exists():
         save_users(default_users)
         return default_users
-    # 加载现有用户数据
     try:
         with open(users_file, 'r', encoding='utf-8') as f:
             return json.load(f)
