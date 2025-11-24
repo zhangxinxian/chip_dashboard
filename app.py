@@ -6,14 +6,24 @@ import time
 import glob
 import re
 import json
+from pathlib import Path
 
 # 核心配置：文件夹路径
 folder_path = "生产看板数据"
-users_file = "users.json"  # 用户数据保存文件
+
+# 获取用户数据文件路径 - 使用绝对路径确保稳定性
+def get_users_file_path():
+    """获取用户数据文件路径"""
+    # 使用当前工作目录的绝对路径
+    current_dir = Path(__file__).parent.absolute()
+    users_file = current_dir / "users.json"
+    return users_file
 
 # 初始化用户数据
 def initialize_users():
     """初始化用户数据"""
+    users_file = get_users_file_path()
+    
     default_users = {
         "xinxian.zhang@intchains.com": {
             "password_hash": hashlib.sha256("123456".encode()).hexdigest(),
@@ -30,7 +40,7 @@ def initialize_users():
     }
     
     # 如果用户文件不存在，创建默认用户
-    if not os.path.exists(users_file):
+    if not users_file.exists():
         save_users(default_users)
         return default_users
     
@@ -46,6 +56,7 @@ def initialize_users():
 def save_users(users_data):
     """保存用户数据到文件"""
     try:
+        users_file = get_users_file_path()
         with open(users_file, 'w', encoding='utf-8') as f:
             json.dump(users_data, f, ensure_ascii=False, indent=2)
         return True
@@ -55,9 +66,8 @@ def save_users(users_data):
 
 def get_users():
     """获取用户数据"""
-    if 'users_data' not in st.session_state:
-        st.session_state.users_data = initialize_users()
-    return st.session_state.users_data
+    # 直接从文件加载，而不是依赖session_state
+    return initialize_users()
 
 def update_user_password(username, new_password_hash):
     """更新用户密码"""
