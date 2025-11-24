@@ -8,21 +8,20 @@ import re
 import json
 from pathlib import Path
 import shutil
+from datetime import datetime
 
 # 核心配置：文件夹路径
 folder_path = "生产看板数据"
 
 # ===================== 用户数据持久化核心逻辑 =====================
 def get_users_file_path():
-    """获取用户数据文件的稳定路径（系统用户目录下的隐藏文件夹）"""
-    home_dir = Path.home()  # 自动获取当前系统的用户主目录
+    home_dir = Path.home()
     app_data_dir = home_dir / ".chip_production_dashboard"
-    app_data_dir.mkdir(exist_ok=True)  # 确保文件夹存在
+    app_data_dir.mkdir(exist_ok=True)
     users_file = app_data_dir / "users.json"
     return users_file
 
 def initialize_users():
-    """初始化用户数据：仅当文件不存在时创建默认用户，否则加载现有数据"""
     users_file = get_users_file_path()
     default_users = {
         "xinxian.zhang@intchains.com": {
@@ -30,13 +29,9 @@ def initialize_users():
             "permissions": ["view", "export", "manage_users", "change_password"]
         }
     }
-    
-    # 若文件不存在，创建默认用户并保存
     if not users_file.exists():
         save_users(default_users)
         return default_users
-    
-    # 若文件存在，加载现有用户数据
     try:
         with open(users_file, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -46,7 +41,6 @@ def initialize_users():
         return default_users
 
 def save_users(users_data):
-    """保存用户数据到文件"""
     try:
         users_file = get_users_file_path()
         with open(users_file, 'w', encoding='utf-8') as f:
@@ -57,11 +51,9 @@ def save_users(users_data):
         return False
 
 def get_users():
-    """获取所有用户数据"""
     return initialize_users()
 
 def update_user_password(username, new_password_hash):
-    """更新用户密码"""
     users_data = get_users()
     if username in users_data:
         users_data[username]["password_hash"] = new_password_hash
@@ -69,7 +61,6 @@ def update_user_password(username, new_password_hash):
     return False
 
 def add_new_user(username, password_hash, permissions):
-    """添加新用户"""
     users_data = get_users()
     if username in users_data:
         return False, "用户名已存在"
@@ -83,7 +74,6 @@ def add_new_user(username, password_hash, permissions):
         return False, "用户添加失败"
 
 def delete_user(username):
-    """删除用户（不能删除当前登录用户）"""
     users_data = get_users()
     if username in users_data and username != st.session_state.username:
         del users_data[username]
@@ -91,19 +81,16 @@ def delete_user(username):
     return False
 
 def get_user_permissions(username):
-    """获取用户权限"""
     users_data = get_users()
     if username in users_data:
         return users_data[username].get("permissions", [])
     return []
 
 def check_permission(username, permission):
-    """检查用户是否有指定权限"""
     permissions = get_user_permissions(username)
     return permission in permissions
 
 def authenticate_user(username, password):
-    """验证用户登录"""
     users_data = get_users()
     hashed_password = hashlib.sha256(password.encode()).hexdigest()
     if username in users_data and users_data[username]["password_hash"] == hashed_password:
@@ -144,13 +131,44 @@ supplier_process_map = {
     "全部": ["BP_加工中", "BP_已完成", "ASY_加工中", "ASY_已完成", "FT_来料仓未测试", "FT_WIP", "FT_成品库存"]
 }
 
+# ===================== 工具函数（识别数量字段、筛选逻辑） =====================
+def get_quantity_fields(df):
+    """自动识别数量相关字段（包含关键词或数值类型）"""
+    quantity_keywords = ['数量', 'QTY', '库存', '已加工完成', '来料', '下单', '当前数量', '芯片数量', '晶圆数量']
+    quantity_fields = []
+    for col in df.columns:
+        # 关键词匹配 + 数值类型判断（排除序号、文本字段）
+        if any(keyword in col for keyword in quantity_keywords) and df[col].dtype in [int, float]:
+            # 转换为数值类型（处理可能的字符串数值）
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            quantity_fields.append(col)
+    return quantity_fields
+
+def apply_custom_filter(df, filter_field, filter_type, filter_value):
+    """应用自定义筛选逻辑（根据字段类型匹配）"""
+    if filter_field not in df.columns or not filter_value:
+        return df
+    
+    # 文本字段：模糊匹配
+    if filter_type == "文本模糊匹配":
+        return df[df[filter_field].astype(str).str.contains(filter_value, na=False, case=False)]
+    # 数字字段：范围筛选（filter_value是[min, max]）
+    elif filter_type == "数字范围":
+        min_val, max_val = filter_value
+        return df[(df[filter_field] >= min_val) & (df[filter_field] <= max_val)]
+    # 日期字段：日期范围筛选（filter_value是[start_date, end_date]）
+    elif filter_type == "日期范围":
+        start_date, end_date = filter_value
+        df[filter_field] = pd.to_datetime(df[filter_field], errors='coerce')
+        return df[(df[filter_field] >= start_date) & (df[filter_field] <= end_date)]
+    return df
+
 # ===================== 页面逻辑（登录、个人中心、用户管理） =====================
 def login_page():
-    """登录页面"""
     st.set_page_config(
         page_title="芯片生产看板 - 登录", 
         layout="centered",
-        page_icon="intchains_logo.png"  # 若需保留浏览器标签图标，确保图标文件存在
+        page_icon="intchains_logo.png"
     )
     st.title("🔐 芯片生产看板 - 用户登录")
     with st.form("login_form"):
@@ -169,7 +187,6 @@ def login_page():
                 st.error("用户名或密码错误！")
 
 def personal_account_page():
-    """个人账户页面"""
     st.subheader("👤 个人账户")
     st.write(f"**用户名:** {st.session_state.username}")
     st.write("---")
@@ -198,7 +215,6 @@ def personal_account_page():
                 st.error("密码修改失败！")
 
 def user_management_page():
-    """用户管理页面"""
     st.subheader("👥 用户管理")
     users_data = get_users()
     st.write("### 当前用户列表")
@@ -247,9 +263,8 @@ def user_management_page():
         else:
             st.error("删除用户失败")
 
-# ===================== 生产看板页面逻辑 =====================
+# ===================== 生产看板页面逻辑（核心修改） =====================
 def dashboard_page():
-    """生产看板页面"""
     if not os.path.exists(folder_path):
         st.error(f"❌ 文件夹不存在！请确认路径：{folder_path}")
         return
@@ -273,41 +288,122 @@ def dashboard_page():
                     st.success(res["msg"])
                 else:
                     st.error(res["msg"])
+    
+    # 合并所有数据
     all_data = pd.concat([hexin_data, rirong_data, hongrun_data], ignore_index=True)
-    st.sidebar.header("🔍 筛选条件")
+    # 清理无效列（全为NaN的列）
+    all_data = all_data.dropna(axis=1, how='all')
+    # 获取所有有效字段（排除空列）
+    all_fields = all_data.columns.tolist()
+    
+    st.sidebar.header("🔍 基础筛选")
+    # 原有基础筛选（供应商、环节、批次号等）
     all_suppliers = ['禾芯', '日荣', '弘润']
     supplier_list = ["全部"] + all_suppliers
     supplier = st.sidebar.selectbox("选择供应商", supplier_list)
     process_list = ["全部"] + supplier_process_map[supplier]
     process = st.sidebar.selectbox("选择环节", process_list)
     all_lot_numbers = all_data['批次号/LOT NO'].dropna().unique().tolist()
-    all_lot_numbers = sorted([lot for lot in all_lot_numbers if lot])
+    all_lot_numbers = sorted([str(lot) for lot in all_lot_numbers if lot])
     lot_number_list = ["全部"] + all_lot_numbers
     selected_lot = st.sidebar.selectbox("选择批次号", lot_number_list)
+    
+    # 日荣ASY加工中额外筛选（保留原有逻辑）
+    selected_process = "全部"
     if supplier == "日荣" and process == "ASY_加工中":
         all_processes = all_data[all_data['供应商'] == '日荣']['当前环节'].dropna().unique().tolist()
-        all_processes = sorted([p for p in all_processes if p])
+        all_processes = sorted([str(p) for p in all_processes if p])
         process_list = ["全部"] + all_processes
         selected_process = st.sidebar.selectbox("选择当前环节", process_list)
-    else:
-        selected_process = "全部"
+    
+    # ===================== 新增：全字段自定义筛选 =====================
+    st.sidebar.header("🔧 自定义字段筛选")
+    # 选择要筛选的字段（排除序号，后续会添加）
+    filter_field = st.sidebar.selectbox("选择筛选字段", all_fields, index=0)
+    # 根据字段类型自动匹配筛选方式
+    field_dtype = all_data[filter_field].dtype
+    filter_type = ""
+    filter_value = None
+    
+    if filter_field:
+        if field_dtype in [int, float]:
+            # 数字字段：范围筛选
+            filter_type = "数字范围"
+            min_val = all_data[filter_field].min() if not pd.isna(all_data[filter_field].min()) else 0
+            max_val = all_data[filter_field].max() if not pd.isna(all_data[filter_field].max()) else 10000
+            filter_value = st.sidebar.slider(
+                f"{filter_field} 范围",
+                min_value=float(min_val),
+                max_value=float(max_val),
+                value=(float(min_val), float(max_val)),
+                step=0.1
+            )
+        elif 'date' in filter_field.lower() or field_dtype == 'datetime64[ns]':
+            # 日期字段：日期范围筛选
+            filter_type = "日期范围"
+            all_dates = pd.to_datetime(all_data[filter_field], errors='coerce').dropna()
+            if not all_dates.empty:
+                start_date = all_dates.min().date()
+                end_date = all_dates.max().date()
+                filter_value = st.sidebar.date_input(
+                    f"{filter_field} 范围",
+                    value=(start_date, end_date),
+                    min_value=start_date,
+                    max_value=end_date
+                )
+        else:
+            # 文本字段：模糊匹配
+            filter_type = "文本模糊匹配"
+            filter_value = st.sidebar.text_input(f"{filter_field} 模糊搜索", placeholder="输入关键词...")
+    
+    # 应用基础筛选
     filtered_data = all_data.copy()
     if supplier != "全部":
         filtered_data = filtered_data[filtered_data['供应商'] == supplier]
     if process != "全部":
         filtered_data = filtered_data[filtered_data['环节'] == process]
     if selected_lot != "全部":
-        filtered_data = filtered_data[filtered_data['批次号/LOT NO'] == selected_lot]
+        filtered_data = filtered_data[filtered_data['批次号/LOT NO'].astype(str) == selected_lot]
     if selected_process != "全部" and supplier == "日荣" and process == "ASY_加工中":
-        filtered_data = filtered_data[filtered_data['当前环节'] == selected_process]
+        filtered_data = filtered_data[filtered_data['当前环节'].astype(str) == selected_process]
+    
+    # 应用自定义字段筛选（叠加基础筛选）
+    filtered_data = apply_custom_filter(filtered_data, filter_field, filter_type, filter_value)
+    
+    # 获取目标字段（保留原有逻辑）
     target_columns = get_target_columns(supplier, process)
+    # 确保目标字段都在筛选后的数据中
+    target_columns = [col for col in target_columns if col in filtered_data.columns]
+    
+    # 整理最终展示数据（添加序号）
     if filtered_data.empty:
-        filtered_data = pd.DataFrame(columns=target_columns)
+        display_data = pd.DataFrame(columns=target_columns)
     else:
-        filtered_data = filtered_data.reindex(columns=target_columns).reset_index(drop=True)
-        filtered_data.insert(0, "序号", range(1, len(filtered_data) + 1))
-    st.subheader("📋 筛选后数据")
-    st.dataframe(filtered_data, use_container_width=True, hide_index=True)
+        display_data = filtered_data.reindex(columns=target_columns).reset_index(drop=True)
+        display_data.insert(0, "序号", range(1, len(display_data) + 1))
+    
+    # ===================== 新增：数量字段求和统计 =====================
+    st.subheader("📊 筛选后数据与统计")
+    # 显示筛选后的数据
+    st.dataframe(display_data, use_container_width=True, hide_index=True)
+    
+    # 识别数量字段并求和
+    quantity_fields = get_quantity_fields(filtered_data)
+    if quantity_fields:
+        st.subheader("💰 数量字段求和结果")
+        # 计算每个数量字段的总和（忽略NaN）
+        sum_results = {}
+        for field in quantity_fields:
+            sum_val = filtered_data[field].sum(skipna=True)
+            sum_results[field] = round(sum_val, 2)  # 保留2位小数
+        
+        # 用卡片布局展示求和结果（每行3个卡片）
+        cols = st.columns(3)
+        for idx, (field, sum_val) in enumerate(sum_results.items()):
+            with cols[idx % 3]:
+                st.metric(label=field, value=sum_val)
+    
+    # 原有导出功能（保留）
     if check_permission(st.session_state.username, "export"):
         if not filtered_data.empty:
             csv_data = filtered_data.to_csv(index=False).encode('utf-8')
@@ -317,6 +413,8 @@ def dashboard_page():
                 file_name=f"芯片生产数据_{time.strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv"
             )
+    
+    # 原有日荣ASY环节统计（保留）
     if supplier == "日荣" and process == "ASY_加工中":
         if not filtered_data.empty and '当前环节' in filtered_data.columns:
             st.subheader("📊 日荣ASY环节统计")
@@ -324,17 +422,22 @@ def dashboard_page():
             process_stats.columns = ['环节', '总数量']
             process_stats = process_stats.sort_values('总数量', ascending=False)
             st.dataframe(process_stats, use_container_width=True, hide_index=True)
+    
+    # 查看全部数据（保留）
     with st.expander("查看全部数据", expanded=False):
         all_target_columns = supplier_process_field_map[supplier]["全部"] if supplier != "全部" else supplier_process_field_map["全部"]["全部"]
+        all_target_columns = [col for col in all_target_columns if col in all_data.columns]
         if all_data.empty:
             all_display_data = pd.DataFrame(columns=all_target_columns)
         else:
             all_display_data = all_data.reindex(columns=all_target_columns).reset_index(drop=True)
             all_display_data.insert(0, "序号", range(1, len(all_display_data) + 1))
         st.dataframe(all_display_data, use_container_width=True, hide_index=True)
+    
+    # 批次号追踪（保留）
     if selected_lot != "全部":
         st.subheader(f"🔍 批次号追踪: {selected_lot}")
-        lot_tracking_data = all_data[all_data['批次号/LOT NO'] == selected_lot].copy()
+        lot_tracking_data = all_data[all_data['批次号/LOT NO'].astype(str) == selected_lot].copy()
         if not lot_tracking_data.empty:
             lot_tracking_data = lot_tracking_data.reset_index(drop=True)
             lot_tracking_data.insert(0, "序号", range(1, len(lot_tracking_data) + 1))
@@ -348,9 +451,8 @@ def dashboard_page():
         else:
             st.info(f"未找到批次号 {selected_lot} 的相关数据")
 
-# ===================== 数据提取函数 =====================
+# ===================== 数据提取函数（保持不变） =====================
 def process_hexin(results):
-    """处理禾芯数据"""
     hexin_data = pd.DataFrame()
     hexin_files = [f for f in os.listdir(folder_path) 
                    if f.split('.')[0].isdigit() and f.endswith('.xlsx')]
@@ -374,7 +476,6 @@ def process_hexin(results):
     return hexin_data
 
 def process_rirong(results):
-    """处理日荣数据"""
     rirong_data = pd.DataFrame()
     rirong_files = [f for f in os.listdir(folder_path) 
                    if f.startswith('ITS') and f.endswith('.xlsx')]
@@ -429,7 +530,6 @@ def process_rirong(results):
     return rirong_data
 
 def process_hongrun(results):
-    """处理弘润数据"""
     hongrun_data = pd.DataFrame()
     hongrun_files = [f for f in os.listdir(folder_path) if 'CNEIC' in f and f.endswith('.xlsx')]
     for file_name in hongrun_files:
@@ -464,7 +564,6 @@ def process_hongrun(results):
     return hongrun_data
 
 def get_target_columns(supplier, process):
-    """获取目标字段"""
     if supplier == "全部" and process == "全部":
         return supplier_process_field_map["全部"]["全部"]
     elif supplier == "全部":
@@ -476,7 +575,6 @@ def get_target_columns(supplier, process):
         return supplier_process_field_map[supplier][process]
 
 def load_css():
-    """加载自定义CSS"""
     st.markdown("""
     <style>
     .bold-header th {
@@ -491,21 +589,25 @@ def load_css():
         border-radius: 10px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
+    .stMetric {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid #eee;
+    }
     </style>
     """, unsafe_allow_html=True)
 
 # ===================== 主应用逻辑 =====================
 def main_app():
-    """主应用页面"""
     st.set_page_config(
         page_title="芯片生产看板", 
         layout="wide",
-        page_icon="intchains_logo.png"  # 若需保留浏览器标签图标，确保图标文件存在
+        page_icon="intchains_logo.png"
     )
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "dashboard"
     
-    # 标题（仅文字，无图标）
     st.title("芯片运营生产看板")
     
     col3 = st.columns([1])[0]
@@ -544,7 +646,6 @@ def main_app():
 
 # ===================== 主函数 =====================
 def main():
-    """主函数：控制登录状态和页面切换"""
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
     if 'username' not in st.session_state:
