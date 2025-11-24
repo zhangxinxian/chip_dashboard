@@ -5,24 +5,112 @@ import hashlib
 import time
 import glob
 import re
+import json
 
 # 核心配置：文件夹路径
 folder_path = "生产看板数据"
+users_file = "users.json"  # 用户数据保存文件
 
-# 用户认证配置 - 使用可变字典以便修改
-if 'USER_CREDENTIALS' not in st.session_state:
-    st.session_state.USER_CREDENTIALS = {
-        "admin": hashlib.sha256("admin123".encode()).hexdigest(),
-        "viewer": hashlib.sha256("viewer123".encode()).hexdigest(),
-        "operator": hashlib.sha256("operator123".encode()).hexdigest()
+# 初始化用户数据
+def initialize_users():
+    """初始化用户数据"""
+    default_users = {
+        "admin": {
+            "password_hash": hashlib.sha256("admin123".encode()).hexdigest(),
+            "permissions": ["view", "export", "manage_users", "change_password"]
+        },
+        "viewer": {
+            "password_hash": hashlib.sha256("viewer123".encode()).hexdigest(),
+            "permissions": ["view"]
+        },
+        "operator": {
+            "password_hash": hashlib.sha256("operator123".encode()).hexdigest(),
+            "permissions": ["view", "export", "change_password"]
+        }
     }
+    
+    # 如果用户文件不存在，创建默认用户
+    if not os.path.exists(users_file):
+        save_users(default_users)
+        return default_users
+    
+    # 如果文件存在，加载用户数据
+    try:
+        with open(users_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except:
+        # 如果文件损坏，使用默认用户并重新保存
+        save_users(default_users)
+        return default_users
+
+def save_users(users_data):
+    """保存用户数据到文件"""
+    try:
+        with open(users_file, 'w', encoding='utf-8') as f:
+            json.dump(users_data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        st.error(f"保存用户数据失败: {e}")
+        return False
+
+def get_users():
+    """获取用户数据"""
+    if 'users_data' not in st.session_state:
+        st.session_state.users_data = initialize_users()
+    return st.session_state.users_data
+
+def update_user_password(username, new_password_hash):
+    """更新用户密码"""
+    users_data = get_users()
+    if username in users_data:
+        users_data[username]["password_hash"] = new_password_hash
+        return save_users(users_data)
+    return False
+
+def add_new_user(username, password_hash, permissions):
+    """添加新用户"""
+    users_data = get_users()
+    if username in users_data:
+        return False, "用户名已存在"
+    
+    users_data[username] = {
+        "password_hash": password_hash,
+        "permissions": permissions
+    }
+    
+    if save_users(users_data):
+        return True, "用户添加成功"
+    else:
+        return False, "用户添加失败"
+
+def delete_user(username):
+    """删除用户"""
+    users_data = get_users()
+    if username in users_data and username != st.session_state.username:
+        del users_data[username]
+        return save_users(users_data)
+    return False
 
 # 用户权限配置
-USER_PERMISSIONS = {
-    "admin": ["view", "export", "manage_users", "change_password"],
-    "viewer": ["view"],
-    "operator": ["view", "export", "change_password"]
-}
+def get_user_permissions(username):
+    """获取用户权限"""
+    users_data = get_users()
+    if username in users_data:
+        return users_data[username].get("permissions", [])
+    return []
+
+def check_permission(username, permission):
+    """检查用户权限"""
+    permissions = get_user_permissions(username)
+    return permission in permissions
+
+def authenticate_user(username, password):
+    """验证用户登录信息"""
+    users_data = get_users()
+    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    if username in users_data and users_data[username]["password_hash"] == hashed_password:
+        return True
+    return False
 
 # 供应商-环节-字段映射
 supplier_process_field_map = {
@@ -59,20 +147,7 @@ supplier_process_map = {
     "全部": ["BP_加工中", "BP_已完成", "ASY_加工中", "ASY_已完成", "FT_来料仓未测试", "FT_WIP", "FT_成品库存"]
 }
 
-# ---------------------- 认证函数 ----------------------
-def authenticate_user(username, password):
-    """验证用户登录信息"""
-    hashed_password = hashlib.sha256(password.encode()).hexdigest()
-    if username in st.session_state.USER_CREDENTIALS and st.session_state.USER_CREDENTIALS[username] == hashed_password:
-        return True
-    return False
-
-def check_permission(username, permission):
-    """检查用户权限"""
-    if username in USER_PERMISSIONS:
-        return permission in USER_PERMISSIONS[username]
-    return False
-
+# ---------------------- 登录页面 ----------------------
 def login_page():
     """登录页面"""
     st.set_page_config(page_title="芯片生产看板 - 登录", layout="centered")
@@ -123,7 +198,8 @@ def change_password_page():
         if submit_button:
             # 验证当前密码
             current_hashed = hashlib.sha256(current_password.encode()).hexdigest()
-            if current_hashed != st.session_state.USER_CREDENTIALS.get(current_username):
+            users_data = get_users()
+            if current_hashed != users_data.get(current_username, {}).get("password_hash", ""):
                 st.error("当前密码错误！")
                 return
             
@@ -138,34 +214,38 @@ def change_password_page():
             
             # 更新密码
             new_hashed = hashlib.sha256(new_password.encode()).hexdigest()
-            st.session_state.USER_CREDENTIALS[current_username] = new_hashed
-            st.success("密码修改成功！")
-            
-            # 记录密码修改日志
-            if 'password_change_log' not in st.session_state:
-                st.session_state.password_change_log = []
-            
-            st.session_state.password_change_log.append({
-                'username': current_username,
-                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
-                'action': 'password_changed'
-            })
+            if update_user_password(current_username, new_hashed):
+                st.success("密码修改成功！")
+                
+                # 记录密码修改日志
+                if 'password_change_log' not in st.session_state:
+                    st.session_state.password_change_log = []
+                
+                st.session_state.password_change_log.append({
+                    'username': current_username,
+                    'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'action': 'password_changed'
+                })
+            else:
+                st.error("密码修改失败！")
 
 def user_management_page():
     """用户管理页面"""
     st.subheader("👥 用户管理")
     
+    users_data = get_users()
+    
     # 显示当前用户列表
     st.write("### 当前用户列表")
-    user_data = []
-    for username in st.session_state.USER_CREDENTIALS:
-        user_data.append({
+    user_list = []
+    for username, user_info in users_data.items():
+        user_list.append({
             '用户名': username,
-            '权限': ', '.join(USER_PERMISSIONS.get(username, [])),
+            '权限': ', '.join(user_info.get("permissions", [])),
             '状态': '在线' if username == st.session_state.username else '离线'
         })
     
-    user_df = pd.DataFrame(user_data)
+    user_df = pd.DataFrame(user_list)
     st.dataframe(user_df, use_container_width=True)
     
     # 添加新用户功能
@@ -177,14 +257,39 @@ def user_management_page():
         submit_button = st.form_submit_button("添加用户")
         
         if submit_button:
-            if new_username in st.session_state.USER_CREDENTIALS:
+            if len(new_username) == 0:
+                st.error("用户名不能为空！")
+            elif new_username in users_data:
                 st.error("用户名已存在！")
             elif len(new_password) < 6:
                 st.error("密码长度至少6位！")
             else:
+                # 根据角色设置权限
+                role_permissions = {
+                    "viewer": ["view"],
+                    "operator": ["view", "export", "change_password"],
+                    "admin": ["view", "export", "manage_users", "change_password"]
+                }
+                
                 new_hashed = hashlib.sha256(new_password.encode()).hexdigest()
-                st.session_state.USER_CREDENTIALS[new_username] = new_hashed
-                st.success(f"用户 {new_username} 添加成功！")
+                success, message = add_new_user(new_username, new_hashed, role_permissions[user_role])
+                if success:
+                    st.success(message)
+                    st.rerun()
+                else:
+                    st.error(message)
+    
+    # 删除用户功能（仅管理员可操作）
+    if check_permission(st.session_state.username, "manage_users"):
+        st.write("### 删除用户")
+        delete_username = st.selectbox("选择要删除的用户", 
+                                      [user for user in users_data.keys() if user != st.session_state.username])
+        if st.button("删除用户", type="secondary"):
+            if delete_user(delete_username):
+                st.success(f"用户 {delete_username} 已删除")
+                st.rerun()
+            else:
+                st.error("删除用户失败")
 
 # ---------------------- 数据提取函数 ----------------------
 def process_hexin(results):
