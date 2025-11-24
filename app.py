@@ -7,56 +7,47 @@ import glob
 import re
 import json
 from pathlib import Path
-from datetime import datetime
-import pytz
+import shutil
 
 # 核心配置：文件夹路径
 folder_path = "生产看板数据"
 
-# 获取北京时间
-def get_beijing_time():
-    """获取北京时间"""
-    beijing_tz = pytz.timezone('Asia/Shanghai')
-    return datetime.now(beijing_tz)
-
-def format_beijing_time(timestamp=None):
-    """格式化北京时间"""
-    beijing_tz = pytz.timezone('Asia/Shanghai')
-    if timestamp is None:
-        dt = datetime.now(beijing_tz)
-    else:
-        # 如果timestamp是时间戳，转换为datetime
-        if isinstance(timestamp, (int, float)):
-            dt = datetime.fromtimestamp(timestamp, beijing_tz)
-        else:
-            dt = timestamp
-    return dt.strftime('%Y-%m-%d %H:%M:%S')
-
-# 获取用户数据文件路径 - 使用绝对路径确保稳定性
+# 获取稳定的用户数据文件路径
 def get_users_file_path():
-    """获取用户数据文件路径"""
-    # 使用当前工作目录的绝对路径
-    current_dir = Path(__file__).parent.absolute()
-    users_file = current_dir / "users.json"
+    """获取稳定的用户数据文件路径"""
+    # 使用用户主目录下的隐藏文件夹，确保数据持久化
+    home_dir = Path.home()
+    app_data_dir = home_dir / ".chip_production_dashboard"
+    app_data_dir.mkdir(exist_ok=True)  # 确保目录存在
+    
+    users_file = app_data_dir / "users.json"
     return users_file
+
+# 迁移旧用户数据（如果存在）
+def migrate_old_users_data():
+    """迁移旧用户数据到新位置"""
+    old_users_file = Path(__file__).parent.absolute() / "users.json"
+    new_users_file = get_users_file_path()
+    
+    # 如果新位置没有数据但旧位置有数据，则迁移
+    if not new_users_file.exists() and old_users_file.exists():
+        try:
+            shutil.copy2(old_users_file, new_users_file)
+            print(f"已从 {old_users_file} 迁移用户数据到 {new_users_file}")
+        except Exception as e:
+            print(f"用户数据迁移失败: {e}")
 
 # 初始化用户数据
 def initialize_users():
     """初始化用户数据"""
+    migrate_old_users_data()  # 尝试迁移旧数据
+    
     users_file = get_users_file_path()
     
     default_users = {
         "xinxian.zhang@intchains.com": {
             "password_hash": hashlib.sha256("123456".encode()).hexdigest(),
             "permissions": ["view", "export", "manage_users", "change_password"]
-        },
-        "viewer": {
-            "password_hash": hashlib.sha256("viewer123".encode()).hexdigest(),
-            "permissions": ["view"]
-        },
-        "operator": {
-            "password_hash": hashlib.sha256("operator123".encode()).hexdigest(),
-            "permissions": ["view", "export", "change_password"]
         }
     }
     
@@ -68,8 +59,17 @@ def initialize_users():
     # 如果文件存在，加载用户数据
     try:
         with open(users_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except:
+            existing_users = json.load(f)
+            
+            # 确保默认管理员账户存在且权限正确
+            admin_email = "xinxian.zhang@intchains.com"
+            if admin_email not in existing_users:
+                existing_users[admin_email] = default_users[admin_email]
+                save_users(existing_users)
+            
+            return existing_users
+    except Exception as e:
+        print(f"加载用户数据失败: {e}")
         # 如果文件损坏，使用默认用户并重新保存
         save_users(default_users)
         return default_users
@@ -194,7 +194,6 @@ def login_page():
             if authenticate_user(username, password):
                 st.session_state.logged_in = True
                 st.session_state.username = username
-                st.session_state.login_time = time.time()  # 存储时间戳
                 st.session_state.current_page = "dashboard"  # 默认显示生产看板
                 st.success(f"欢迎回来，{username}！")
                 time.sleep(1)  # 等待1秒让用户看到成功消息
@@ -209,8 +208,6 @@ def personal_account_page():
     
     # 显示用户信息
     st.write(f"**用户名:** {st.session_state.username}")
-    st.write(f"**登录时间:** {format_beijing_time(st.session_state.login_time)}")
-    st.write(f"**当前时间:** {format_beijing_time()}")
     
     # 修改密码功能
     st.write("---")
@@ -403,7 +400,7 @@ def dashboard_page():
             st.download_button(
                 label="📥 导出CSV",
                 data=csv_data,
-                file_name=f"芯片生产数据_{format_beijing_time().replace(':', '').replace(' ', '_')}.csv",
+                file_name=f"芯片生产数据_{time.strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv"
             )
 
@@ -640,11 +637,7 @@ def main_app():
             st.session_state.current_page = "dashboard"
             st.rerun()
     
-    # 显示北京时间
-    current_time = format_beijing_time()
-    login_time = format_beijing_time(st.session_state.login_time)
-    
-    st.write(f"👤 当前用户: **{st.session_state.username}** | 🕐 登录时间: {login_time} | 📅 当前时间: {current_time}")
+    st.write(f"👤 当前用户: **{st.session_state.username}**")
     
     # 加载自定义CSS
     load_css()
@@ -684,8 +677,6 @@ def main():
         st.session_state.logged_in = False
     if 'username' not in st.session_state:
         st.session_state.username = None
-    if 'login_time' not in st.session_state:
-        st.session_state.login_time = None
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "dashboard"
     
