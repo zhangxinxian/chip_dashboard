@@ -1,11 +1,28 @@
 import pandas as pd
 import os
 import streamlit as st
+import hashlib
+import time
+import glob
+import re
 
-# 核心配置：文件夹路径（线上部署时需改为GitHub仓库中的相对路径）
-# 本地测试用：folder_path = r"C:\Users\minfa\Desktop\生产看板数据"
-# 线上部署用（GitHub仓库相对路径）：
+# 核心配置：文件夹路径
 folder_path = "生产看板数据"
+
+# 用户认证配置 - 使用可变字典以便修改
+if 'USER_CREDENTIALS' not in st.session_state:
+    st.session_state.USER_CREDENTIALS = {
+        "admin": hashlib.sha256("admin123".encode()).hexdigest(),
+        "viewer": hashlib.sha256("viewer123".encode()).hexdigest(),
+        "operator": hashlib.sha256("operator123".encode()).hexdigest()
+    }
+
+# 用户权限配置
+USER_PERMISSIONS = {
+    "admin": ["view", "export", "manage_users", "change_password"],
+    "viewer": ["view"],
+    "operator": ["view", "export", "change_password"]
+}
 
 # 供应商-环节-字段映射
 supplier_process_field_map = {
@@ -42,8 +59,136 @@ supplier_process_map = {
     "全部": ["BP_加工中", "BP_已完成", "ASY_加工中", "ASY_已完成", "FT_来料仓未测试", "FT_WIP", "FT_成品库存"]
 }
 
-# ---------------------- 1. 禾芯数据提取（支持任意日期的.xlsx文件） ----------------------
+# ---------------------- 认证函数 ----------------------
+def authenticate_user(username, password):
+    """验证用户登录信息"""
+    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    if username in st.session_state.USER_CREDENTIALS and st.session_state.USER_CREDENTIALS[username] == hashed_password:
+        return True
+    return False
+
+def check_permission(username, permission):
+    """检查用户权限"""
+    if username in USER_PERMISSIONS:
+        return permission in USER_PERMISSIONS[username]
+    return False
+
+def login_page():
+    """登录页面"""
+    st.set_page_config(page_title="芯片生产看板 - 登录", layout="centered")
+    
+    st.title("🔐 芯片生产看板 - 用户登录")
+    
+    with st.form("login_form"):
+        username = st.text_input("用户名", placeholder="请输入用户名")
+        password = st.text_input("密码", type="password", placeholder="请输入密码")
+        submit_button = st.form_submit_button("登录")
+        
+        if submit_button:
+            if authenticate_user(username, password):
+                st.session_state.logged_in = True
+                st.session_state.username = username
+                st.session_state.login_time = time.time()
+                st.success(f"欢迎回来，{username}！")
+                time.sleep(1)  # 等待1秒让用户看到成功消息
+                st.rerun()
+            else:
+                st.error("用户名或密码错误！")
+    
+    # 显示默认账户信息（仅用于演示）
+    with st.expander("默认账户信息（点击查看）"):
+        st.write("**管理员账户:**")
+        st.write("- 用户名: `admin`")
+        st.write("- 密码: `admin123`")
+        st.write("**操作员账户:**")
+        st.write("- 用户名: `operator`")
+        st.write("- 密码: `operator123`")
+        st.write("**查看者账户:**")
+        st.write("- 用户名: `viewer`")
+        st.write("- 密码: `viewer123`")
+        st.info("首次登录后请立即修改默认密码！")
+
+# ---------------------- 密码管理函数 ----------------------
+def change_password_page():
+    """修改密码页面"""
+    st.subheader("🔐 修改密码")
+    
+    with st.form("change_password_form"):
+        current_username = st.session_state.username
+        current_password = st.text_input("当前密码", type="password")
+        new_password = st.text_input("新密码", type="password")
+        confirm_password = st.text_input("确认新密码", type="password")
+        submit_button = st.form_submit_button("修改密码")
+        
+        if submit_button:
+            # 验证当前密码
+            current_hashed = hashlib.sha256(current_password.encode()).hexdigest()
+            if current_hashed != st.session_state.USER_CREDENTIALS.get(current_username):
+                st.error("当前密码错误！")
+                return
+            
+            # 验证新密码
+            if new_password != confirm_password:
+                st.error("新密码和确认密码不匹配！")
+                return
+            
+            if len(new_password) < 6:
+                st.error("密码长度至少6位！")
+                return
+            
+            # 更新密码
+            new_hashed = hashlib.sha256(new_password.encode()).hexdigest()
+            st.session_state.USER_CREDENTIALS[current_username] = new_hashed
+            st.success("密码修改成功！")
+            
+            # 记录密码修改日志
+            if 'password_change_log' not in st.session_state:
+                st.session_state.password_change_log = []
+            
+            st.session_state.password_change_log.append({
+                'username': current_username,
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                'action': 'password_changed'
+            })
+
+def user_management_page():
+    """用户管理页面"""
+    st.subheader("👥 用户管理")
+    
+    # 显示当前用户列表
+    st.write("### 当前用户列表")
+    user_data = []
+    for username in st.session_state.USER_CREDENTIALS:
+        user_data.append({
+            '用户名': username,
+            '权限': ', '.join(USER_PERMISSIONS.get(username, [])),
+            '状态': '在线' if username == st.session_state.username else '离线'
+        })
+    
+    user_df = pd.DataFrame(user_data)
+    st.dataframe(user_df, use_container_width=True)
+    
+    # 添加新用户功能
+    st.write("### 添加新用户")
+    with st.form("add_user_form"):
+        new_username = st.text_input("新用户名")
+        new_password = st.text_input("密码", type="password")
+        user_role = st.selectbox("用户角色", ["viewer", "operator", "admin"])
+        submit_button = st.form_submit_button("添加用户")
+        
+        if submit_button:
+            if new_username in st.session_state.USER_CREDENTIALS:
+                st.error("用户名已存在！")
+            elif len(new_password) < 6:
+                st.error("密码长度至少6位！")
+            else:
+                new_hashed = hashlib.sha256(new_password.encode()).hexdigest()
+                st.session_state.USER_CREDENTIALS[new_username] = new_hashed
+                st.success(f"用户 {new_username} 添加成功！")
+
+# ---------------------- 数据提取函数 ----------------------
 def process_hexin(results):
+    """处理禾芯数据"""
     hexin_data = pd.DataFrame()
     # 筛选规则：文件名以数字开头 + 扩展名.xlsx
     hexin_files = [f for f in os.listdir(folder_path) 
@@ -70,8 +215,8 @@ def process_hexin(results):
             results.append({"file": file_name, "status": "error", "msg": f"禾芯文件《{file_name}》提取失败：{str(e)}"})
     return hexin_data
 
-# ---------------------- 2. 日荣数据提取（支持任意日期的ITS开头.xlsx文件） ----------------------
 def process_rirong(results):
+    """处理日荣数据"""
     rirong_data = pd.DataFrame()
     # 筛选规则：文件名以ITS开头 + 扩展名.xlsx
     rirong_files = [f for f in os.listdir(folder_path) 
@@ -148,8 +293,8 @@ def process_rirong(results):
         rirong_data = pd.concat([rirong_data, empty_wip, empty_fg], ignore_index=True)
     return rirong_data
 
-# ---------------------- 3. 弘润数据提取 ----------------------
 def process_hongrun(results):
+    """处理弘润数据"""
     hongrun_data = pd.DataFrame()
     hongrun_files = [f for f in os.listdir(folder_path) if 'CNEIC' in f and f.endswith('.xlsx')]
     for file_name in hongrun_files:
@@ -184,8 +329,9 @@ def process_hongrun(results):
             results.append({"file": file_name, "status": "error", "msg": f"弘润文件《{file_name}》提取失败：{str(e)}"})
     return hongrun_data
 
-# ---------------------- 辅助函数：获取目标字段 ----------------------
+# ---------------------- 辅助函数 ----------------------
 def get_target_columns(supplier, process):
+    """获取目标字段"""
     if supplier == "全部" and process == "全部":
         return supplier_process_field_map["全部"]["全部"]
     elif supplier == "全部":
@@ -196,29 +342,78 @@ def get_target_columns(supplier, process):
     else:
         return supplier_process_field_map[supplier][process]
 
-# ---------------------- 自定义CSS样式 ----------------------
 def load_css():
+    """加载自定义CSS样式"""
     st.markdown("""
     <style>
     .bold-header th {
         font-weight: bold !important;
         background-color: #f0f2f6;
     }
+    .login-container {
+        max-width: 400px;
+        margin: 0 auto;
+        padding: 20px;
+        border: 1px solid #ddd;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# ---------------------- 主函数：页面展示 ----------------------
-def main():
+# ---------------------- 主应用 ----------------------
+def main_app():
+    """主应用页面"""
     st.set_page_config(page_title="芯片生产看板", layout="wide")
-    st.title("📊 芯片运营生产看板")
+    
+    # 顶部用户信息栏
+    col1, col2, col3 = st.columns([3, 3, 1])
+    with col1:
+        st.title("📊 芯片运营生产看板")
+    with col3:
+        if st.button("🚪 退出登录"):
+            st.session_state.logged_in = False
+            st.session_state.username = None
+            st.rerun()
+    
+    st.write(f"👤 当前用户: **{st.session_state.username}** | 🕐 登录时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(st.session_state.login_time))}")
     
     # 加载自定义CSS
     load_css()
 
+    # 检查文件夹是否存在
     if not os.path.exists(folder_path):
         st.error(f"❌ 文件夹不存在！请确认路径：{folder_path}")
         return
 
+    # 在侧边栏添加密码管理和用户管理选项
+    if check_permission(st.session_state.username, "change_password"):
+        st.sidebar.header("🔐 账户管理")
+        if st.sidebar.button("修改密码"):
+            st.session_state.show_change_password = True
+    
+    if check_permission(st.session_state.username, "manage_users"):
+        st.sidebar.header("👥 用户管理")
+        if st.sidebar.button("管理用户"):
+            st.session_state.show_user_management = True
+    
+    # 显示密码修改页面
+    if st.session_state.get('show_change_password', False):
+        change_password_page()
+        if st.button("返回主页面"):
+            st.session_state.show_change_password = False
+            st.rerun()
+        return
+    
+    # 显示用户管理页面
+    if st.session_state.get('show_user_management', False):
+        user_management_page()
+        if st.button("返回主页面"):
+            st.session_state.show_user_management = False
+            st.rerun()
+        return
+    
+    # 数据提取和处理
     results = []
 
     with st.spinner("正在提取数据..."):
@@ -246,13 +441,16 @@ def main():
                 else:
                     st.error(res["msg"])
 
+    # 合并所有数据
     all_data = pd.concat([hexin_data, rirong_data, hongrun_data], ignore_index=True)
 
+    # 侧边栏筛选条件
+    st.sidebar.header("🔍 筛选条件")
+    
     all_suppliers = ['禾芯', '日荣', '弘润']
     supplier_list = ["全部"] + all_suppliers
-
-    st.sidebar.header("🔍 筛选条件")
     supplier = st.sidebar.selectbox("选择供应商", supplier_list)
+    
     process_list = ["全部"] + supplier_process_map[supplier]
     process = st.sidebar.selectbox("选择环节", process_list)
     
@@ -271,6 +469,7 @@ def main():
     else:
         selected_process = "全部"
 
+    # 数据筛选
     filtered_data = all_data.copy()
     if supplier != "全部":
         filtered_data = filtered_data[filtered_data['供应商'] == supplier]
@@ -281,6 +480,7 @@ def main():
     if selected_process != "全部" and supplier == "日荣" and process == "ASY_加工中":
         filtered_data = filtered_data[filtered_data['当前环节'] == selected_process]
 
+    # 获取目标字段
     target_columns = get_target_columns(supplier, process)
 
     if filtered_data.empty:
@@ -289,8 +489,20 @@ def main():
         filtered_data = filtered_data.reindex(columns=target_columns).reset_index(drop=True)
         filtered_data.insert(0, "序号", range(1, len(filtered_data) + 1))
 
+    # 显示筛选后数据
     st.subheader("📋 筛选后数据")
     st.dataframe(filtered_data, use_container_width=True, hide_index=True)
+
+    # 导出功能（需要权限）
+    if check_permission(st.session_state.username, "export"):
+        if not filtered_data.empty:
+            csv_data = filtered_data.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 导出CSV",
+                data=csv_data,
+                file_name=f"芯片生产数据_{time.strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
 
     # 日荣ASY_加工中环节的环节统计
     if supplier == "日荣" and process == "ASY_加工中":
@@ -301,6 +513,7 @@ def main():
             process_stats = process_stats.sort_values('总数量', ascending=False)
             st.dataframe(process_stats, use_container_width=True, hide_index=True)
 
+    # 查看全部数据
     with st.expander("查看全部数据", expanded=False):
         all_target_columns = supplier_process_field_map[supplier]["全部"] if supplier != "全部" else supplier_process_field_map["全部"]["全部"]
         if all_data.empty:
@@ -310,6 +523,7 @@ def main():
             all_display_data.insert(0, "序号", range(1, len(all_display_data) + 1))
         st.dataframe(all_display_data, use_container_width=True, hide_index=True)
 
+    # 批次号追踪
     if selected_lot != "全部":
         st.subheader(f"🔍 批次号追踪: {selected_lot}")
         lot_tracking_data = all_data[all_data['批次号/LOT NO'] == selected_lot].copy()
@@ -327,6 +541,22 @@ def main():
                 st.write(status_info)
         else:
             st.info(f"未找到批次号 {selected_lot} 的相关数据")
+
+# ---------------------- 主函数 ----------------------
+def main():
+    # 初始化session state
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+    if 'username' not in st.session_state:
+        st.session_state.username = None
+    if 'login_time' not in st.session_state:
+        st.session_state.login_time = None
+    
+    # 检查登录状态
+    if not st.session_state.logged_in:
+        login_page()
+    else:
+        main_app()
 
 if __name__ == "__main__":
     main()
