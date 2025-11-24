@@ -136,7 +136,7 @@ def login_page():
     st.set_page_config(
         page_title="芯片生产看板 - 登录", 
         layout="centered",
-        page_icon="intchains_logo.png"  # 浏览器标签图标
+        page_icon="intchains_logo.png"  # 浏览器标签图标（若需保留可继续使用，无需修改）
     )
     st.title("🔐 芯片生产看板 - 用户登录")
     with st.form("login_form"):
@@ -479,20 +479,12 @@ def main_app():
     st.set_page_config(
         page_title="芯片生产看板", 
         layout="wide",
-        page_icon="intchains_logo.png"  # 浏览器标签图标
+        page_icon="intchains_logo.png"  # 浏览器标签图标（若需保留可继续使用，无需修改）
     )
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "dashboard"
-    # 替换页面内图标（红框部分）
-    st.markdown(
-        """
-        <div style="display: flex; align-items: center;">
-            <img src="intchains_logo.png" width="40" height="40" style="margin-right: 10px;">
-            <h1>芯片运营生产看板</h1>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    # 仅保留文字标题，移除图标
+    st.title("芯片运营生产看板")
     col3 = st.columns([1])[0]
     with col3:
         if st.button("🚪 退出登录"):
