@@ -7,9 +7,30 @@ import glob
 import re
 import json
 from pathlib import Path
+from datetime import datetime
+import pytz
 
 # 核心配置：文件夹路径
 folder_path = "生产看板数据"
+
+# 获取北京时间
+def get_beijing_time():
+    """获取北京时间"""
+    beijing_tz = pytz.timezone('Asia/Shanghai')
+    return datetime.now(beijing_tz)
+
+def format_beijing_time(timestamp=None):
+    """格式化北京时间"""
+    beijing_tz = pytz.timezone('Asia/Shanghai')
+    if timestamp is None:
+        dt = datetime.now(beijing_tz)
+    else:
+        # 如果timestamp是时间戳，转换为datetime
+        if isinstance(timestamp, (int, float)):
+            dt = datetime.fromtimestamp(timestamp, beijing_tz)
+        else:
+            dt = timestamp
+    return dt.strftime('%Y-%m-%d %H:%M:%S')
 
 # 获取用户数据文件路径 - 使用绝对路径确保稳定性
 def get_users_file_path():
@@ -173,7 +194,7 @@ def login_page():
             if authenticate_user(username, password):
                 st.session_state.logged_in = True
                 st.session_state.username = username
-                st.session_state.login_time = time.time()
+                st.session_state.login_time = time.time()  # 存储时间戳
                 st.session_state.current_page = "dashboard"  # 默认显示生产看板
                 st.success(f"欢迎回来，{username}！")
                 time.sleep(1)  # 等待1秒让用户看到成功消息
@@ -188,7 +209,8 @@ def personal_account_page():
     
     # 显示用户信息
     st.write(f"**用户名:** {st.session_state.username}")
-    st.write(f"**登录时间:** {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(st.session_state.login_time))}")
+    st.write(f"**登录时间:** {format_beijing_time(st.session_state.login_time)}")
+    st.write(f"**当前时间:** {format_beijing_time()}")
     
     # 修改密码功能
     st.write("---")
@@ -381,7 +403,7 @@ def dashboard_page():
             st.download_button(
                 label="📥 导出CSV",
                 data=csv_data,
-                file_name=f"芯片生产数据_{time.strftime('%Y%m%d_%H%M%S')}.csv",
+                file_name=f"芯片生产数据_{format_beijing_time().replace(':', '').replace(' ', '_')}.csv",
                 mime="text/csv"
             )
 
@@ -618,7 +640,11 @@ def main_app():
             st.session_state.current_page = "dashboard"
             st.rerun()
     
-    st.write(f"👤 当前用户: **{st.session_state.username}** | 🕐 登录时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(st.session_state.login_time))}")
+    # 显示北京时间
+    current_time = format_beijing_time()
+    login_time = format_beijing_time(st.session_state.login_time)
+    
+    st.write(f"👤 当前用户: **{st.session_state.username}** | 🕐 登录时间: {login_time} | 📅 当前时间: {current_time}")
     
     # 加载自定义CSS
     load_css()
