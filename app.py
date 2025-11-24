@@ -15,8 +15,8 @@ users_file = "users.json"  # 用户数据保存文件
 def initialize_users():
     """初始化用户数据"""
     default_users = {
-        "admin": {
-            "password_hash": hashlib.sha256("admin123".encode()).hexdigest(),
+        "xinxian.zhang@intchains.com": {
+            "password_hash": hashlib.sha256("123456".encode()).hexdigest(),
             "permissions": ["view", "export", "manage_users", "change_password"]
         },
         "viewer": {
@@ -164,32 +164,27 @@ def login_page():
                 st.session_state.logged_in = True
                 st.session_state.username = username
                 st.session_state.login_time = time.time()
+                st.session_state.current_page = "dashboard"  # 默认显示生产看板
                 st.success(f"欢迎回来，{username}！")
                 time.sleep(1)  # 等待1秒让用户看到成功消息
                 st.rerun()
             else:
                 st.error("用户名或密码错误！")
-    
-    # 显示默认账户信息（仅用于演示）
-    with st.expander("默认账户信息（点击查看）"):
-        st.write("**管理员账户:**")
-        st.write("- 用户名: `admin`")
-        st.write("- 密码: `admin123`")
-        st.write("**操作员账户:**")
-        st.write("- 用户名: `operator`")
-        st.write("- 密码: `operator123`")
-        st.write("**查看者账户:**")
-        st.write("- 用户名: `viewer`")
-        st.write("- 密码: `viewer123`")
-        st.info("首次登录后请立即修改默认密码！")
 
-# ---------------------- 密码管理函数 ----------------------
-def change_password_page():
-    """修改密码页面"""
-    st.subheader("🔐 修改密码")
+# ---------------------- 个人账户页面 ----------------------
+def personal_account_page():
+    """个人账户页面"""
+    st.subheader("👤 个人账户")
+    
+    # 显示用户信息
+    st.write(f"**用户名:** {st.session_state.username}")
+    st.write(f"**登录时间:** {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(st.session_state.login_time))}")
+    
+    # 修改密码功能
+    st.write("---")
+    st.write("### 修改密码")
     
     with st.form("change_password_form"):
-        current_username = st.session_state.username
         current_password = st.text_input("当前密码", type="password")
         new_password = st.text_input("新密码", type="password")
         confirm_password = st.text_input("确认新密码", type="password")
@@ -199,7 +194,7 @@ def change_password_page():
             # 验证当前密码
             current_hashed = hashlib.sha256(current_password.encode()).hexdigest()
             users_data = get_users()
-            if current_hashed != users_data.get(current_username, {}).get("password_hash", ""):
+            if current_hashed != users_data.get(st.session_state.username, {}).get("password_hash", ""):
                 st.error("当前密码错误！")
                 return
             
@@ -214,21 +209,12 @@ def change_password_page():
             
             # 更新密码
             new_hashed = hashlib.sha256(new_password.encode()).hexdigest()
-            if update_user_password(current_username, new_hashed):
+            if update_user_password(st.session_state.username, new_hashed):
                 st.success("密码修改成功！")
-                
-                # 记录密码修改日志
-                if 'password_change_log' not in st.session_state:
-                    st.session_state.password_change_log = []
-                
-                st.session_state.password_change_log.append({
-                    'username': current_username,
-                    'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
-                    'action': 'password_changed'
-                })
             else:
                 st.error("密码修改失败！")
 
+# ---------------------- 用户管理页面 ----------------------
 def user_management_page():
     """用户管理页面"""
     st.subheader("👥 用户管理")
@@ -279,17 +265,153 @@ def user_management_page():
                 else:
                     st.error(message)
     
-    # 删除用户功能（仅管理员可操作）
-    if check_permission(st.session_state.username, "manage_users"):
-        st.write("### 删除用户")
-        delete_username = st.selectbox("选择要删除的用户", 
-                                      [user for user in users_data.keys() if user != st.session_state.username])
-        if st.button("删除用户", type="secondary"):
-            if delete_user(delete_username):
-                st.success(f"用户 {delete_username} 已删除")
-                st.rerun()
-            else:
-                st.error("删除用户失败")
+    # 删除用户功能
+    st.write("### 删除用户")
+    delete_username = st.selectbox("选择要删除的用户", 
+                                  [user for user in users_data.keys() if user != st.session_state.username])
+    if st.button("删除用户", type="secondary"):
+        if delete_user(delete_username):
+            st.success(f"用户 {delete_username} 已删除")
+            st.rerun()
+        else:
+            st.error("删除用户失败")
+
+# ---------------------- 生产看板页面 ----------------------
+def dashboard_page():
+    """生产看板页面"""
+    # 检查文件夹是否存在
+    if not os.path.exists(folder_path):
+        st.error(f"❌ 文件夹不存在！请确认路径：{folder_path}")
+        return
+
+    # 数据提取和处理
+    results = []
+
+    with st.spinner("正在提取数据..."):
+        hexin_data = process_hexin(results)
+        rirong_data = process_rirong(results)
+        hongrun_data = process_hongrun(results)
+
+    success_count = sum(1 for res in results if res["status"] == "success")
+    error_count = len(results) - success_count
+    button_text = "文件读取失败" if error_count > 0 else "文件读取成功"
+
+    if 'show_file_status' not in st.session_state:
+        st.session_state.show_file_status = False
+
+    def toggle_file_status():
+        st.session_state.show_file_status = not st.session_state.show_file_status
+
+    st.button(button_text, on_click=toggle_file_status)
+
+    if st.session_state.show_file_status:
+        with st.expander("文件读取详情", expanded=True):
+            for res in results:
+                if res["status"] == "success":
+                    st.success(res["msg"])
+                else:
+                    st.error(res["msg"])
+
+    # 合并所有数据
+    all_data = pd.concat([hexin_data, rirong_data, hongrun_data], ignore_index=True)
+
+    # 侧边栏筛选条件
+    st.sidebar.header("🔍 筛选条件")
+    
+    all_suppliers = ['禾芯', '日荣', '弘润']
+    supplier_list = ["全部"] + all_suppliers
+    supplier = st.sidebar.selectbox("选择供应商", supplier_list)
+    
+    process_list = ["全部"] + supplier_process_map[supplier]
+    process = st.sidebar.selectbox("选择环节", process_list)
+    
+    # 添加批次号筛选
+    all_lot_numbers = all_data['批次号/LOT NO'].dropna().unique().tolist()
+    all_lot_numbers = sorted([lot for lot in all_lot_numbers if lot])
+    lot_number_list = ["全部"] + all_lot_numbers
+    selected_lot = st.sidebar.selectbox("选择批次号", lot_number_list)
+    
+    # 添加环节筛选（仅当日荣ASY_加工中时显示）
+    if supplier == "日荣" and process == "ASY_加工中":
+        all_processes = all_data[all_data['供应商'] == '日荣']['当前环节'].dropna().unique().tolist()
+        all_processes = sorted([p for p in all_processes if p])
+        process_list = ["全部"] + all_processes
+        selected_process = st.sidebar.selectbox("选择当前环节", process_list)
+    else:
+        selected_process = "全部"
+
+    # 数据筛选
+    filtered_data = all_data.copy()
+    if supplier != "全部":
+        filtered_data = filtered_data[filtered_data['供应商'] == supplier]
+    if process != "全部":
+        filtered_data = filtered_data[filtered_data['环节'] == process]
+    if selected_lot != "全部":
+        filtered_data = filtered_data[filtered_data['批次号/LOT NO'] == selected_lot]
+    if selected_process != "全部" and supplier == "日荣" and process == "ASY_加工中":
+        filtered_data = filtered_data[filtered_data['当前环节'] == selected_process]
+
+    # 获取目标字段
+    target_columns = get_target_columns(supplier, process)
+
+    if filtered_data.empty:
+        filtered_data = pd.DataFrame(columns=target_columns)
+    else:
+        filtered_data = filtered_data.reindex(columns=target_columns).reset_index(drop=True)
+        filtered_data.insert(0, "序号", range(1, len(filtered_data) + 1))
+
+    # 显示筛选后数据
+    st.subheader("📋 筛选后数据")
+    st.dataframe(filtered_data, use_container_width=True, hide_index=True)
+
+    # 导出功能（需要权限）
+    if check_permission(st.session_state.username, "export"):
+        if not filtered_data.empty:
+            csv_data = filtered_data.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 导出CSV",
+                data=csv_data,
+                file_name=f"芯片生产数据_{time.strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+
+    # 日荣ASY_加工中环节的环节统计
+    if supplier == "日荣" and process == "ASY_加工中":
+        if not filtered_data.empty and '当前环节' in filtered_data.columns:
+            st.subheader("📊 日荣ASY环节统计")
+            process_stats = filtered_data.groupby('当前环节')['当前数量/WIP QTY'].sum().reset_index()
+            process_stats.columns = ['环节', '总数量']
+            process_stats = process_stats.sort_values('总数量', ascending=False)
+            st.dataframe(process_stats, use_container_width=True, hide_index=True)
+
+    # 查看全部数据
+    with st.expander("查看全部数据", expanded=False):
+        all_target_columns = supplier_process_field_map[supplier]["全部"] if supplier != "全部" else supplier_process_field_map["全部"]["全部"]
+        if all_data.empty:
+            all_display_data = pd.DataFrame(columns=all_target_columns)
+        else:
+            all_display_data = all_data.reindex(columns=all_target_columns).reset_index(drop=True)
+            all_display_data.insert(0, "序号", range(1, len(all_display_data) + 1))
+        st.dataframe(all_display_data, use_container_width=True, hide_index=True)
+
+    # 批次号追踪
+    if selected_lot != "全部":
+        st.subheader(f"🔍 批次号追踪: {selected_lot}")
+        lot_tracking_data = all_data[all_data['批次号/LOT NO'] == selected_lot].copy()
+        
+        if not lot_tracking_data.empty:
+            lot_tracking_data = lot_tracking_data.reset_index(drop=True)
+            lot_tracking_data.insert(0, "序号", range(1, len(lot_tracking_data) + 1))
+            st.dataframe(lot_tracking_data, use_container_width=True, hide_index=True)
+            
+            st.write("**批次状态概览:**")
+            for _, row in lot_tracking_data.iterrows():
+                status_info = f"- {row['供应商']} | {row['环节']}"
+                if row['供应商'] == '日荣' and row['环节'] == 'ASY_加工中' and '当前环节' in row:
+                    status_info += f" | 当前环节: {row['当前环节']} | 数量: {row['当前数量/WIP QTY']}"
+                st.write(status_info)
+        else:
+            st.info(f"未找到批次号 {selected_lot} 的相关数据")
 
 # ---------------------- 数据提取函数 ----------------------
 def process_hexin(results):
@@ -471,6 +593,10 @@ def main_app():
     """主应用页面"""
     st.set_page_config(page_title="芯片生产看板", layout="wide")
     
+    # 初始化当前页面
+    if 'current_page' not in st.session_state:
+        st.session_state.current_page = "dashboard"
+    
     # 顶部用户信息栏
     col1, col2, col3 = st.columns([3, 3, 1])
     with col1:
@@ -479,6 +605,7 @@ def main_app():
         if st.button("🚪 退出登录"):
             st.session_state.logged_in = False
             st.session_state.username = None
+            st.session_state.current_page = "dashboard"
             st.rerun()
     
     st.write(f"👤 当前用户: **{st.session_state.username}** | 🕐 登录时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(st.session_state.login_time))}")
@@ -486,166 +613,33 @@ def main_app():
     # 加载自定义CSS
     load_css()
 
-    # 检查文件夹是否存在
-    if not os.path.exists(folder_path):
-        st.error(f"❌ 文件夹不存在！请确认路径：{folder_path}")
-        return
-
-    # 在侧边栏添加密码管理和用户管理选项
-    if check_permission(st.session_state.username, "change_password"):
-        st.sidebar.header("🔐 账户管理")
-        if st.sidebar.button("修改密码"):
-            st.session_state.show_change_password = True
+    # 侧边栏导航
+    st.sidebar.header("📱 导航")
     
+    # 页面切换按钮
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        if st.button("📊 生产看板", use_container_width=True):
+            st.session_state.current_page = "dashboard"
+            st.rerun()
+    with col2:
+        if st.button("👤 个人账户", use_container_width=True):
+            st.session_state.current_page = "personal_account"
+            st.rerun()
+    
+    # 管理员专属按钮
     if check_permission(st.session_state.username, "manage_users"):
-        st.sidebar.header("👥 用户管理")
-        if st.sidebar.button("管理用户"):
-            st.session_state.show_user_management = True
-    
-    # 显示密码修改页面
-    if st.session_state.get('show_change_password', False):
-        change_password_page()
-        if st.button("返回主页面"):
-            st.session_state.show_change_password = False
+        if st.sidebar.button("👥 用户管理", use_container_width=True):
+            st.session_state.current_page = "user_management"
             st.rerun()
-        return
     
-    # 显示用户管理页面
-    if st.session_state.get('show_user_management', False):
+    # 根据当前页面显示相应内容
+    if st.session_state.current_page == "dashboard":
+        dashboard_page()
+    elif st.session_state.current_page == "personal_account":
+        personal_account_page()
+    elif st.session_state.current_page == "user_management":
         user_management_page()
-        if st.button("返回主页面"):
-            st.session_state.show_user_management = False
-            st.rerun()
-        return
-    
-    # 数据提取和处理
-    results = []
-
-    with st.spinner("正在提取数据..."):
-        hexin_data = process_hexin(results)
-        rirong_data = process_rirong(results)
-        hongrun_data = process_hongrun(results)
-
-    success_count = sum(1 for res in results if res["status"] == "success")
-    error_count = len(results) - success_count
-    button_text = "文件读取失败" if error_count > 0 else "文件读取成功"
-
-    if 'show_file_status' not in st.session_state:
-        st.session_state.show_file_status = False
-
-    def toggle_file_status():
-        st.session_state.show_file_status = not st.session_state.show_file_status
-
-    st.button(button_text, on_click=toggle_file_status)
-
-    if st.session_state.show_file_status:
-        with st.expander("文件读取详情", expanded=True):
-            for res in results:
-                if res["status"] == "success":
-                    st.success(res["msg"])
-                else:
-                    st.error(res["msg"])
-
-    # 合并所有数据
-    all_data = pd.concat([hexin_data, rirong_data, hongrun_data], ignore_index=True)
-
-    # 侧边栏筛选条件
-    st.sidebar.header("🔍 筛选条件")
-    
-    all_suppliers = ['禾芯', '日荣', '弘润']
-    supplier_list = ["全部"] + all_suppliers
-    supplier = st.sidebar.selectbox("选择供应商", supplier_list)
-    
-    process_list = ["全部"] + supplier_process_map[supplier]
-    process = st.sidebar.selectbox("选择环节", process_list)
-    
-    # 添加批次号筛选
-    all_lot_numbers = all_data['批次号/LOT NO'].dropna().unique().tolist()
-    all_lot_numbers = sorted([lot for lot in all_lot_numbers if lot])
-    lot_number_list = ["全部"] + all_lot_numbers
-    selected_lot = st.sidebar.selectbox("选择批次号", lot_number_list)
-    
-    # 添加环节筛选（仅当日荣ASY_加工中时显示）
-    if supplier == "日荣" and process == "ASY_加工中":
-        all_processes = all_data[all_data['供应商'] == '日荣']['当前环节'].dropna().unique().tolist()
-        all_processes = sorted([p for p in all_processes if p])
-        process_list = ["全部"] + all_processes
-        selected_process = st.sidebar.selectbox("选择当前环节", process_list)
-    else:
-        selected_process = "全部"
-
-    # 数据筛选
-    filtered_data = all_data.copy()
-    if supplier != "全部":
-        filtered_data = filtered_data[filtered_data['供应商'] == supplier]
-    if process != "全部":
-        filtered_data = filtered_data[filtered_data['环节'] == process]
-    if selected_lot != "全部":
-        filtered_data = filtered_data[filtered_data['批次号/LOT NO'] == selected_lot]
-    if selected_process != "全部" and supplier == "日荣" and process == "ASY_加工中":
-        filtered_data = filtered_data[filtered_data['当前环节'] == selected_process]
-
-    # 获取目标字段
-    target_columns = get_target_columns(supplier, process)
-
-    if filtered_data.empty:
-        filtered_data = pd.DataFrame(columns=target_columns)
-    else:
-        filtered_data = filtered_data.reindex(columns=target_columns).reset_index(drop=True)
-        filtered_data.insert(0, "序号", range(1, len(filtered_data) + 1))
-
-    # 显示筛选后数据
-    st.subheader("📋 筛选后数据")
-    st.dataframe(filtered_data, use_container_width=True, hide_index=True)
-
-    # 导出功能（需要权限）
-    if check_permission(st.session_state.username, "export"):
-        if not filtered_data.empty:
-            csv_data = filtered_data.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 导出CSV",
-                data=csv_data,
-                file_name=f"芯片生产数据_{time.strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
-
-    # 日荣ASY_加工中环节的环节统计
-    if supplier == "日荣" and process == "ASY_加工中":
-        if not filtered_data.empty and '当前环节' in filtered_data.columns:
-            st.subheader("📊 日荣ASY环节统计")
-            process_stats = filtered_data.groupby('当前环节')['当前数量/WIP QTY'].sum().reset_index()
-            process_stats.columns = ['环节', '总数量']
-            process_stats = process_stats.sort_values('总数量', ascending=False)
-            st.dataframe(process_stats, use_container_width=True, hide_index=True)
-
-    # 查看全部数据
-    with st.expander("查看全部数据", expanded=False):
-        all_target_columns = supplier_process_field_map[supplier]["全部"] if supplier != "全部" else supplier_process_field_map["全部"]["全部"]
-        if all_data.empty:
-            all_display_data = pd.DataFrame(columns=all_target_columns)
-        else:
-            all_display_data = all_data.reindex(columns=all_target_columns).reset_index(drop=True)
-            all_display_data.insert(0, "序号", range(1, len(all_display_data) + 1))
-        st.dataframe(all_display_data, use_container_width=True, hide_index=True)
-
-    # 批次号追踪
-    if selected_lot != "全部":
-        st.subheader(f"🔍 批次号追踪: {selected_lot}")
-        lot_tracking_data = all_data[all_data['批次号/LOT NO'] == selected_lot].copy()
-        
-        if not lot_tracking_data.empty:
-            lot_tracking_data = lot_tracking_data.reset_index(drop=True)
-            lot_tracking_data.insert(0, "序号", range(1, len(lot_tracking_data) + 1))
-            st.dataframe(lot_tracking_data, use_container_width=True, hide_index=True)
-            
-            st.write("**批次状态概览:**")
-            for _, row in lot_tracking_data.iterrows():
-                status_info = f"- {row['供应商']} | {row['环节']}"
-                if row['供应商'] == '日荣' and row['环节'] == 'ASY_加工中' and '当前环节' in row:
-                    status_info += f" | 当前环节: {row['当前环节']} | 数量: {row['当前数量/WIP QTY']}"
-                st.write(status_info)
-        else:
-            st.info(f"未找到批次号 {selected_lot} 的相关数据")
 
 # ---------------------- 主函数 ----------------------
 def main():
@@ -656,6 +650,8 @@ def main():
         st.session_state.username = None
     if 'login_time' not in st.session_state:
         st.session_state.login_time = None
+    if 'current_page' not in st.session_state:
+        st.session_state.current_page = "dashboard"
     
     # 检查登录状态
     if not st.session_state.logged_in:
