@@ -181,7 +181,12 @@ supplier_process_map = {
 # ---------------------- 登录页面 ----------------------
 def login_page():
     """登录页面"""
-    st.set_page_config(page_title="芯片生产看板 - 登录", layout="centered")
+    # 关键修改：添加 page_icon 配置，指向图标文件
+    st.set_page_config(
+        page_title="芯片生产看板 - 登录", 
+        layout="centered",
+        page_icon="intchains_logo.png"  # 图标文件名称（需和脚本同目录）
+    )
     
     st.title("🔐 芯片生产看板 - 用户登录")
     
@@ -620,7 +625,12 @@ def load_css():
 # ---------------------- 主应用 ----------------------
 def main_app():
     """主应用页面"""
-    st.set_page_config(page_title="芯片生产看板", layout="wide")
+    # 关键修改：添加 page_icon 配置，指向图标文件
+    st.set_page_config(
+        page_title="芯片生产看板", 
+        layout="wide",
+        page_icon="intchains_logo.png"  # 图标文件名称（需和脚本同目录）
+    )
     
     # 初始化当前页面
     if 'current_page' not in st.session_state:
