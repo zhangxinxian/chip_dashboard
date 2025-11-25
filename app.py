@@ -210,11 +210,15 @@ supplier_process_map = {
 # ---------------------- 登录页面 ----------------------
 def login_page():
     """登录页面"""
-    st.set_page_config(page_title="INTCHAINS - 昵链 - 登录", layout="centered")
+    st.set_page_config(
+        page_title="INTCHAINS - 聪链 - 登录", 
+        layout="centered",
+        page_icon="intchains_logo.png"  # 使用仓库中的LOGO文件
+    )
     
-    # 使用INTCHAINS品牌
+    # 使用INTCHAINS+聪链品牌
     st.markdown("<h1 style='text-align: center;'>INTCHAINS</h1>", unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align: center; margin-bottom: 30px;'>—— 昵链 ——</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center; margin-bottom: 30px;'>—— 聪链 ——</h3>", unsafe_allow_html=True)
     st.markdown("<h2 style='text-align: center;'>用户登录</h2>", unsafe_allow_html=True)
     
     with st.form("login_form"):
@@ -666,15 +670,19 @@ def load_css():
 # ---------------------- 主应用 ----------------------
 def main_app():
     """主应用页面"""
-    st.set_page_config(page_title="INTCHAINS - 昵链 - 生产看板", layout="wide")
+    st.set_page_config(
+        page_title="INTCHAINS - 聪链 - 生产看板", 
+        layout="wide",
+        page_icon="intchains_logo.png"  # 使用仓库中的LOGO文件
+    )
     
     # 初始化当前页面
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "dashboard"
     
-    # 顶部用户信息栏 - 使用INTCHAINS品牌
+    # 顶部品牌栏 - 使用INTCHAINS+聪链
     st.markdown("<h1 class='intchains-title'>INTCHAINS</h1>", unsafe_allow_html=True)
-    st.markdown("<h3 class='intchains-subtitle'>—— 昵链 —— 生产看板</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 class='intchains-subtitle'>—— 聪链 —— 生产看板</h3>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([3, 3, 1])
     with col3:
