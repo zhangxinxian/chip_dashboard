@@ -343,7 +343,7 @@ def user_management_page():
 
 # ---------------------- 生产看板页面 ----------------------
 def dashboard_page():
-    """生产看板页面"""
+    """芯片生产看板页面"""
     # 检查文件夹是否存在
     if not os.path.exists(folder_path):
         st.error(f"❌ 文件夹不存在！请确认路径：{folder_path}")
@@ -671,7 +671,7 @@ def load_css():
 def main_app():
     """主应用页面"""
     st.set_page_config(
-        page_title="INTCHAINS - 聪链 - 生产看板", 
+        page_title="INTCHAINS - 聪链 - 芯片生产看板", 
         layout="wide",
         page_icon="intchains_logo.png"  # 使用仓库中的LOGO文件
     )
@@ -703,7 +703,7 @@ def main_app():
     # 页面切换按钮
     col1, col2 = st.sidebar.columns(2)
     with col1:
-        if st.button("📊 生产看板", use_container_width=True):
+        if st.button("📊 芯片生产看板", use_container_width=True):
             st.session_state.current_page = "dashboard"
             st.rerun()
     with col2:
