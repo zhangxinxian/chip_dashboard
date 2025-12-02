@@ -2,3 +2,4 @@ streamlit>=1.30.0
 plotly>=5.18.0
 pandas>=2.0.0
 openpyxl>=3.1.0
+xlrd>=2.0.1  # 新增：支持读取.xls格式
