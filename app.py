@@ -280,15 +280,30 @@ def user_management_page():
         else:
             st.error("删除用户失败")
 
-# ---------------------- 数据处理函数 ----------------------
+# ---------------------- 数据处理函数（新增：自动选择Excel引擎） ----------------------
+def get_excel_engine(file_name):
+    """根据文件后缀选择Excel读取引擎：.xls用xlrd，.xlsx用openpyxl"""
+    file_ext = os.path.splitext(file_name)[1].lower()
+    if file_ext == ".xls":
+        return "xlrd"
+    elif file_ext == ".xlsx":
+        return "openpyxl"
+    else:
+        return None  # 不支持的格式
+
 def process_hexin(results):
     hexin_data = pd.DataFrame()
+    # 同时匹配.xls和.xlsx格式
     hexin_files = [f for f in os.listdir(folder_path) 
-                   if f.split('.')[0].isdigit() and f.endswith('.xlsx')]
+                   if f.split('.')[0].isdigit() and f.endswith(('.xls', '.xlsx'))]
     for file_name in hexin_files:
         file_path = os.path.join(folder_path, file_name)
+        engine = get_excel_engine(file_name)
+        if not engine:
+            results.append({"file": file_name, "status": "error", "msg": f"禾芯文件《{file_name}》格式不支持，仅支持xls/xlsx"})
+            continue
         try:
-            df_wip = pd.read_excel(file_path, sheet_name="wip", header=0, engine='openpyxl')
+            df_wip = pd.read_excel(file_path, sheet_name="wip", header=0, engine=engine)
             wip_extracted = df_wip.iloc[:, [1, 5, 7]].copy()
             wip_extracted.columns = ['批次号/LOT NO', '晶圆型号/WAFER DEVICE', '晶圆数量/WAFER QTY']
             wip_extracted['供应商'] = '禾芯'
@@ -296,7 +311,7 @@ def process_hexin(results):
             wip_extracted['芯片名称/DEVICE NAME'] = None
             wip_extracted['数量'] = pd.to_numeric(wip_extracted['晶圆数量/WAFER QTY'], errors='coerce')
 
-            df_fin = pd.read_excel(file_path, sheet_name="Finished Products", header=0, engine='openpyxl')
+            df_fin = pd.read_excel(file_path, sheet_name="Finished Products", header=0, engine=engine)
             fin_extracted = df_fin.iloc[:, [1, 2, 3, 4]].copy()
             fin_extracted.columns = ['晶圆型号/WAFER DEVICE', '入库日期', '芯片数量/GOOD DIE QTY', '批次号/LOT NO']
             fin_extracted['供应商'] = '禾芯'
@@ -312,12 +327,17 @@ def process_hexin(results):
 
 def process_rirong(results):
     rirong_data = pd.DataFrame()
+    # 同时匹配.xls和.xlsx格式
     rirong_files = [f for f in os.listdir(folder_path) 
-                   if f.startswith('ITS') and f.endswith('.xlsx')]
+                   if f.startswith('ITS') and f.endswith(('.xls', '.xlsx'))]
     for file_name in rirong_files:
         file_path = os.path.join(folder_path, file_name)
+        engine = get_excel_engine(file_name)
+        if not engine:
+            results.append({"file": file_name, "status": "error", "msg": f"日荣文件《{file_name}》格式不支持，仅支持xls/xlsx"})
+            continue
         try:
-            df_wip = pd.read_excel(file_path, sheet_name="ATX WIP", header=None, engine='openpyxl')
+            df_wip = pd.read_excel(file_path, sheet_name="ATX WIP", header=None, engine=engine)
             process_columns = list(range(13, 23))
             process_names = df_wip.iloc[5, process_columns].tolist()
             wip_extracted = df_wip.iloc[6:, [1, 4, 7, 9, 12]].copy()
@@ -348,7 +368,7 @@ def process_rirong(results):
             wip_extracted['环节'] = 'ASY_加工中'
             wip_extracted['数量'] = pd.to_numeric(wip_extracted['当前数量/WIP QTY'], errors='coerce')
 
-            df_fg = pd.read_excel(file_path, sheet_name="ATX FG", header=None, engine='openpyxl')
+            df_fg = pd.read_excel(file_path, sheet_name="ATX FG", header=None, engine=engine)
             fg_extracted = df_fg.iloc[:, [1, 2, 8, 13]].copy() if len(df_fg) > 6 else pd.DataFrame(columns=[1, 2, 8, 13])
             fg_extracted.columns = ['已加工完成芯片数量', '批次号/LOT NO', '芯片名称/DEVICE NAME', '封装周码/DATE CODE']
             fg_extracted['晶圆型号/WAFER DEVICE'] = None
@@ -373,12 +393,17 @@ def process_rirong(results):
 
 def process_hongrun(results):
     hongrun_data = pd.DataFrame()
-    hongrun_files = [f for f in os.listdir(folder_path) if 'CNEIC' in f and f.endswith('.xlsx')]
+    # 同时匹配.xls和.xlsx格式
+    hongrun_files = [f for f in os.listdir(folder_path) if 'CNEIC' in f and f.endswith(('.xls', '.xlsx'))]
     for file_name in hongrun_files:
         file_path = os.path.join(folder_path, file_name)
+        engine = get_excel_engine(file_name)
+        if not engine:
+            results.append({"file": file_name, "status": "error", "msg": f"弘润文件《{file_name}》格式不支持，仅支持xls/xlsx"})
+            continue
         try:
             if 'WMS' in file_name:
-                df = pd.read_excel(file_path, header=0, engine='openpyxl')
+                df = pd.read_excel(file_path, header=0, engine=engine)
                 extracted = df.iloc[:, [5, 7, 16]].copy()
                 extracted.columns = ['芯片名称/DEVICE NAME', '批次号/LOT NO', '来料数量/IM QTY']
                 extracted['晶圆型号/WAFER DEVICE'] = None
@@ -386,7 +411,7 @@ def process_hongrun(results):
                 extracted['环节'] = 'FT_来料仓未测试'
                 extracted['数量'] = pd.to_numeric(extracted['来料数量/IM QTY'], errors='coerce')
             elif 'WIP' in file_name:
-                df = pd.read_excel(file_path, header=0, engine='openpyxl')
+                df = pd.read_excel(file_path, header=0, engine=engine)
                 extracted = df.iloc[:, [3, 4, 7, 8, 12, 15, 16]].copy()
                 extracted.columns = ['芯片名称/DEVICE NAME', '测试订单号/FT PO', '测试类型/FT\\RT', '批次号/LOT NO', '封装周码/DATE CODE', '当前数量/WIP QTY', 'BIN别/BIN']
                 extracted['晶圆型号/WAFER DEVICE'] = None
@@ -394,7 +419,7 @@ def process_hongrun(results):
                 extracted['环节'] = 'FT_WIP'
                 extracted['数量'] = pd.to_numeric(extracted['当前数量/WIP QTY'], errors='coerce')
             elif '成品库存' in file_name:
-                df = pd.read_excel(file_path, header=0, engine='openpyxl')
+                df = pd.read_excel(file_path, header=0, engine=engine)
                 extracted = df.iloc[:, [3, 5, 11, 13, 16, 17]].copy()
                 extracted.columns = ['测试订单号/FT PO', '芯片名称/DEVICE NAME', '批次号/LOT NO', '封装周码/DATE CODE', 'BIN别/BIN', '库存数量']
                 extracted['晶圆型号/WAFER DEVICE'] = None
