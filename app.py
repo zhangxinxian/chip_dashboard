@@ -440,8 +440,10 @@ def render_charts(all_data):
     display_suppliers = summary_data['供应商'].unique().tolist() if supplier == "全部" else [supplier]
     device_list = summary_data['芯片名称/DEVICE NAME'].unique().tolist()
     
-    color_palette = px.colors.qualitative.D3 + px.colors.qualitative.Set2 + px.colors.qualitative.Pastel
-    device_color_map = {device: color_palette[i % len(color_palette)] for i, device in enumerate(device_list)}
+    # ---- 核心修改：使用低饱和度(Pastel)的调色板 ----
+    # 组合多个柔和色系，确保颜色够用
+    soft_palette = px.colors.qualitative.Pastel1 + px.colors.qualitative.Pastel2 + px.colors.qualitative.Set3
+    device_color_map = {device: soft_palette[i % len(soft_palette)] for i, device in enumerate(device_list)}
 
     # ---- 步骤1：计算全局最大柱子数量，确定统一的Span（跨度） ----
     max_process_count = 0
@@ -452,17 +454,14 @@ def render_charts(all_data):
             if count > max_process_count:
                 max_process_count = count
     
-    # 核心逻辑：Zoom In (放大视图) - 保持不变
-    # 系数 2.4 配合 width=0.8，可以完美实现“宽柱子+大间隙”的效果
+    # 保持不变：Zoom In (放大视图)
     global_span = max(max_process_count, 2.4) 
 
     # ------------------ 灵活布局（Layout Centering） - 保持不变 ------------------
-    # 强制两列布局
     cols = st.columns(2)
     # ------------------------------------------------------------------
 
     for idx, s in enumerate(display_suppliers):
-        # 0 -> col[0], 1 -> col[1], 2 -> col[0], 3 -> col[1] ...
         col_to_use = cols[idx % 2]
             
         with col_to_use:
@@ -474,7 +473,7 @@ def render_charts(all_data):
             s_data['scaled_quantity'] = nonlinear_scale(s_data['数量'].values)
             
             # ---- 步骤2：计算当前图表的中心点，动态设置Range实现内容居中 - 保持不变 ----
-            current_categories = s_data['环节'].unique()
+            current_categories = sorted(s_data['环节'].unique().tolist())
             n_bars = len(current_categories)
             
             if n_bars > 0:
@@ -497,14 +496,18 @@ def render_charts(all_data):
                         text=device_data['数量'],
                         textposition='outside',
                         textfont=dict(size=12, color='black', weight='bold'),
-                        marker=dict(color=device_color_map[device], line=dict(color='black', width=0.5)),
+                        marker=dict(
+                            # ---- 核心修改：使用基于 Device 的颜色映射 ----
+                            color=device_color_map[device], 
+                            line=dict(color='black', width=0.5)
+                        ),
                         hovertemplate=f"<b>DEVICE:</b> {device}<br><b>环节:</b> %{{x}}<br><b>真实数量:</b> %{{text}}<extra></extra>",
-                        # 核心修改：维持宽度 0.8
+                        # 保持不变：维持宽度 0.8
                         width=0.8
                     ))
             
             fig.update_layout(
-                # 核心修改：维持标题绝对居中 (xref='paper')
+                # 保持不变：标题绝对居中
                 title=dict(
                     text=f'{s}',
                     x=0.5,
@@ -519,7 +522,7 @@ def render_charts(all_data):
                     tickfont=dict(size=14, color='black', weight='bold'),
                     tickangle=0,
                     showgrid=False,
-                    # 核心修改：维持动态计算的居中 Range
+                    # 保持不变：维持动态计算的居中 Range
                     range=[x_range_min, x_range_max]
                 ),
                 yaxis=dict(
