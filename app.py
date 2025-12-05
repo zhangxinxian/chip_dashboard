@@ -440,14 +440,9 @@ def render_charts(all_data):
     display_suppliers = summary_data['供应商'].unique().tolist() if supplier == "全部" else [supplier]
     device_list = summary_data['芯片名称/DEVICE NAME'].unique().tolist()
     
-    # ---- 修改点：创建基于“环节”的颜色映射 ----
-    # 收集当前所有出现的环节名称
-    all_processes_in_chart = sorted(all_data['环节'].unique().tolist())
-    # 使用一个足够丰富的调色板
-    process_palette = px.colors.qualitative.Plotly + px.colors.qualitative.Bold + px.colors.qualitative.Safe + px.colors.qualitative.Vivid
-    # 建立映射字典：环节名称 -> 颜色
-    process_color_map = {proc: process_palette[i % len(process_palette)] for i, proc in enumerate(all_processes_in_chart)}
-    
+    color_palette = px.colors.qualitative.D3 + px.colors.qualitative.Set2 + px.colors.qualitative.Pastel
+    device_color_map = {device: color_palette[i % len(color_palette)] for i, device in enumerate(device_list)}
+
     # ---- 步骤1：计算全局最大柱子数量，确定统一的Span（跨度） ----
     max_process_count = 0
     for s in display_suppliers:
@@ -457,11 +452,11 @@ def render_charts(all_data):
             if count > max_process_count:
                 max_process_count = count
     
-    # 核心逻辑：Zoom In (放大视图)
+    # 核心逻辑：Zoom In (放大视图) - 保持不变
     # 系数 2.4 配合 width=0.8，可以完美实现“宽柱子+大间隙”的效果
     global_span = max(max_process_count, 2.4) 
 
-    # ------------------ 灵活布局（Layout Centering） ------------------
+    # ------------------ 灵活布局（Layout Centering） - 保持不变 ------------------
     # 强制两列布局
     cols = st.columns(2)
     # ------------------------------------------------------------------
@@ -478,7 +473,7 @@ def render_charts(all_data):
             
             s_data['scaled_quantity'] = nonlinear_scale(s_data['数量'].values)
             
-            # ---- 步骤2：计算当前图表的中心点，动态设置Range实现内容居中 ----
+            # ---- 步骤2：计算当前图表的中心点，动态设置Range实现内容居中 - 保持不变 ----
             current_categories = s_data['环节'].unique()
             n_bars = len(current_categories)
             
@@ -495,10 +490,6 @@ def render_charts(all_data):
             for device in device_list:
                 device_data = s_data[s_data['芯片名称/DEVICE NAME'] == device]
                 if not device_data.empty:
-                    # ---- 修改点：根据环节（x轴值）来分配颜色 ----
-                    # 获取当前这个Device分布在哪些环节，并找到对应的颜色
-                    bar_colors = [process_color_map.get(p, '#333333') for p in device_data['环节']]
-                    
                     fig.add_trace(go.Bar(
                         x=device_data['环节'],
                         y=device_data['scaled_quantity'],
@@ -506,17 +497,14 @@ def render_charts(all_data):
                         text=device_data['数量'],
                         textposition='outside',
                         textfont=dict(size=12, color='black', weight='bold'),
-                        marker=dict(
-                            color=bar_colors,  # <--- 应用基于环节的颜色
-                            line=dict(color='black', width=0.5) # 保留边框，以便区分Stacked结构
-                        ),
+                        marker=dict(color=device_color_map[device], line=dict(color='black', width=0.5)),
                         hovertemplate=f"<b>DEVICE:</b> {device}<br><b>环节:</b> %{{x}}<br><b>真实数量:</b> %{{text}}<extra></extra>",
-                        # 核心修改：恢复到 0.8 宽度
+                        # 核心修改：维持宽度 0.8
                         width=0.8
                     ))
             
             fig.update_layout(
-                # 核心修改：标题绝对居中 (xref='paper')
+                # 核心修改：维持标题绝对居中 (xref='paper')
                 title=dict(
                     text=f'{s}',
                     x=0.5,
@@ -531,7 +519,7 @@ def render_charts(all_data):
                     tickfont=dict(size=14, color='black', weight='bold'),
                     tickangle=0,
                     showgrid=False,
-                    # 核心修改：应用动态计算的居中 Range
+                    # 核心修改：维持动态计算的居中 Range
                     range=[x_range_min, x_range_max]
                 ),
                 yaxis=dict(
@@ -711,16 +699,11 @@ def main_app():
     # 样式修正：强制多选框标签为蓝色 (#2196F3)，文字为白色
     st.markdown("""
     <style>
-    /* 多选框 Tag 样式 */
+    /* 多选框 Tag 样式 - 容器 */
     .stMultiSelect div[data-baseweb="tag"] {
         background-color: #2196F3 !important; /* 蓝色背景 */
-        color: white !important; /* 白色文字 */
-        border: none !important; 
+        border: 1px solid #2196F3 !important;
         border-radius: 4px;
-    }
-    /* 鼠标悬停变深色 */
-    .stMultiSelect div[data-baseweb="tag"]:hover {
-        background-color: #1976D2 !important;
     }
     /* Tag 内部文字颜色 */
     .stMultiSelect div[data-baseweb="tag"] span {
@@ -729,6 +712,11 @@ def main_app():
     /* Tag 关闭图标颜色 */
     .stMultiSelect div[data-baseweb="tag"] svg {
         fill: white !important;
+        color: white !important;
+    }
+    /* 额外的CSS选择器以防Streamlit结构微调 */
+    span[data-baseweb="tag"] {
+        background-color: #2196F3 !important;
         color: white !important;
     }
     .stSelectbox {background-color: white !important;}
