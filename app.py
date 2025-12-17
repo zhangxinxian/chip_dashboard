@@ -140,8 +140,14 @@ supplier_process_field_map = {
         "FT_成品库存": ['供应商', '环节', '晶圆型号/WAFER DEVICE', '芯片名称/DEVICE NAME', '测试订单号/FT PO', '批次号/LOT NO', '封装周码/DATE CODE', 'BIN别/BIN', '库存数量'],
         "全部": ['供应商', '环节', '晶圆型号/WAFER DEVICE', '芯片名称/DEVICE NAME', '批次号/LOT NO', '来料数量/IM QTY', '测试订单号/FT PO', '测试类型/FT\\RT', '封装周码/DATE CODE', '当前数量/WIP QTY', 'BIN别/BIN', '库存数量']
     },
+    "伟测": {
+        "FT_来料仓未测试": ['供应商', '环节', '芯片名称/DEVICE NAME', '批次号/LOT NO', '封装周码/DATE CODE', 'BIN别/BIN', '来料数量/IM QTY'],
+        "FT_WIP": ['供应商', '环节', '芯片名称/DEVICE NAME', '批次号/LOT NO', '封装周码/DATE CODE', 'BIN别/BIN', '当前数量/WIP QTY', '站别/Status'],
+        "FT_成品库存": ['供应商', '环节', '芯片名称/DEVICE NAME', '批次号/LOT NO', '封装周码/DATE CODE', 'BIN别/BIN', '库存数量'],
+        "全部": ['供应商', '环节', '芯片名称/DEVICE NAME', '批次号/LOT NO', '封装周码/DATE CODE', 'BIN别/BIN', '来料数量/IM QTY', '当前数量/WIP QTY', '库存数量', '站别/Status']
+    },
     "全部": {
-        "全部": ['供应商', '环节', '批次号/LOT NO', '晶圆型号/WAFER DEVICE', '芯片名称/DEVICE NAME', '晶圆数量/WAFER QTY', '入库日期', '芯片数量/GOOD DIE QTY', '封装订单号/ASY PO', '开始时间/START TIME', '下单数量/ORDER QTY', '当前环节', '当前数量/WIP QTY', '已加工完成芯片数量', '封装周码/DATE CODE', '测试订单号/FT PO', '测试类型/FT\\RT', 'BIN别/BIN', '来料数量/IM QTY', '库存数量']
+        "全部": ['供应商', '环节', '批次号/LOT NO', '晶圆型号/WAFER DEVICE', '芯片名称/DEVICE NAME', '晶圆数量/WAFER QTY', '入库日期', '芯片数量/GOOD DIE QTY', '封装订单号/ASY PO', '开始时间/START TIME', '下单数量/ORDER QTY', '当前环节', '当前数量/WIP QTY', '已加工完成芯片数量', '封装周码/DATE CODE', '测试订单号/FT PO', '测试类型/FT\\RT', 'BIN别/BIN', '来料数量/IM QTY', '库存数量', '站别/Status']
     }
 }
 
@@ -150,6 +156,7 @@ supplier_process_map = {
     "禾芯": ["BP_加工中", "BP_已完成"],
     "日荣": ["ASY_加工中", "ASY_已完成"],
     "弘润": ["FT_来料仓未测试", "FT_WIP", "FT_成品库存"],
+    "伟测": ["FT_来料仓未测试", "FT_WIP", "FT_成品库存"],
     "全部": ["BP_加工中", "BP_已完成", "ASY_加工中", "ASY_已完成", "FT_来料仓未测试", "FT_WIP", "FT_成品库存"]
 }
 
@@ -259,6 +266,9 @@ def process_hexin(results):
     hexin_files = [f for f in os.listdir(folder_path) if f.split('.')[0].isdigit() and f.endswith(('.xls', '.xlsx'))]
     for file_name in hexin_files:
         file_path = os.path.join(folder_path, file_name)
+        if not os.path.isfile(file_path):
+            results.append({"file": file_name, "status": "error", "msg": f"禾芯文件《{file_name}》路径不存在"})
+            continue
         engine = get_excel_engine(file_name)
         if not engine:
             results.append({"file": file_name, "status": "error", "msg": f"禾芯文件《{file_name}》格式不支持"})
@@ -282,6 +292,8 @@ def process_hexin(results):
 
             hexin_data = pd.concat([hexin_data, wip_extracted, fin_extracted], ignore_index=True)
             results.append({"file": file_name, "status": "success", "msg": f"禾芯文件《{file_name}》提取成功！"})
+        except PermissionError:
+            results.append({"file": file_name, "status": "error", "msg": f"禾芯文件《{file_name}》权限不足，请关闭文件后重试"})
         except Exception as e:
             results.append({"file": file_name, "status": "error", "msg": f"禾芯文件《{file_name}》提取失败：{str(e)}"})
     return hexin_data
@@ -291,6 +303,9 @@ def process_rirong(results):
     rirong_files = [f for f in os.listdir(folder_path) if f.startswith('ITS') and f.endswith(('.xls', '.xlsx'))]
     for file_name in rirong_files:
         file_path = os.path.join(folder_path, file_name)
+        if not os.path.isfile(file_path):
+            results.append({"file": file_name, "status": "error", "msg": f"日荣文件《{file_name}》路径不存在"})
+            continue
         engine = get_excel_engine(file_name)
         if not engine:
             results.append({"file": file_name, "status": "error", "msg": f"日荣文件《{file_name}》格式不支持"})
@@ -336,6 +351,8 @@ def process_rirong(results):
 
             rirong_data = pd.concat([rirong_data, wip_extracted, fg_extracted], ignore_index=True)
             results.append({"file": file_name, "status": "success", "msg": f"日荣文件《{file_name}》提取成功！"})
+        except PermissionError:
+            results.append({"file": file_name, "status": "error", "msg": f"日荣文件《{file_name}》权限不足，请关闭文件后重试"})
         except Exception as e:
             results.append({"file": file_name, "status": "error", "msg": f"日荣文件《{file_name}》提取失败：{str(e)}"})
     if rirong_data.empty:
@@ -356,6 +373,9 @@ def process_hongrun(results):
     hongrun_files = [f for f in os.listdir(folder_path) if 'CNEIC' in f and f.endswith(('.xls', '.xlsx'))]
     for file_name in hongrun_files:
         file_path = os.path.join(folder_path, file_name)
+        if not os.path.isfile(file_path):
+            results.append({"file": file_name, "status": "error", "msg": f"弘润文件《{file_name}》路径不存在"})
+            continue
         engine = get_excel_engine(file_name)
         if not engine:
             results.append({"file": file_name, "status": "error", "msg": f"弘润文件《{file_name}》格式不支持"})
@@ -391,22 +411,73 @@ def process_hongrun(results):
 
             hongrun_data = pd.concat([hongrun_data, extracted], ignore_index=True)
             results.append({"file": file_name, "status": "success", "msg": f"弘润文件《{file_name}》提取成功！"})
+        except PermissionError:
+            results.append({"file": file_name, "status": "error", "msg": f"弘润文件《{file_name}》权限不足，请关闭文件后重试"})
         except Exception as e:
             results.append({"file": file_name, "status": "error", "msg": f"弘润文件《{file_name}》提取失败：{str(e)}"})
     return hongrun_data
+
+def process_weice(results):
+    weice_data = pd.DataFrame()
+    weice_files = [f for f in os.listdir(folder_path) if 'LXQ' in f and f.endswith(('.xls', '.xlsx'))]
+    for file_name in weice_files:
+        file_path = os.path.join(folder_path, file_name)
+        if not os.path.isfile(file_path):
+            results.append({"file": file_name, "status": "error", "msg": f"伟测文件《{file_name}》路径不存在"})
+            continue
+        engine = get_excel_engine(file_name)
+        if not engine:
+            results.append({"file": file_name, "status": "error", "msg": f"伟测文件《{file_name}》格式不支持"})
+            continue
+        try:
+            df = pd.read_excel(file_path, sheet_name="WIP", header=0, engine=engine)
+            extracted = df.iloc[:, [7, 9, 14, 17, 18, 19, 22]].copy()
+            extracted.columns = [
+                '芯片名称/DEVICE NAME', '批次号/LOT NO', '封装周码/DATE CODE', 
+                'Step', 'BIN别/BIN', '数量字段', '站别/Status'
+            ]
+            extracted['供应商'] = '伟测'
+            extracted['环节'] = ''
+            extracted['来料数量/IM QTY'] = None
+            extracted['当前数量/WIP QTY'] = None
+            extracted['库存数量'] = None
+            extracted['晶圆型号/WAFER DEVICE'] = extracted['芯片名称/DEVICE NAME']
+
+            wbt_mask = extracted['Step'] == 'WBT'
+            extracted.loc[wbt_mask, '环节'] = 'FT_来料仓未测试'
+            extracted.loc[wbt_mask, '来料数量/IM QTY'] = extracted.loc[wbt_mask, '数量字段']
+            extracted.loc[wbt_mask, '数量'] = pd.to_numeric(extracted.loc[wbt_mask, '数量字段'], errors='coerce')
+
+            wip_mask = extracted['Step'] == 'WIP'
+            extracted.loc[wip_mask, '环节'] = 'FT_WIP'
+            extracted.loc[wip_mask, '当前数量/WIP QTY'] = extracted.loc[wip_mask, '数量字段']
+            extracted.loc[wip_mask, '数量'] = pd.to_numeric(extracted.loc[wip_mask, '数量字段'], errors='coerce')
+
+            wat_mask = extracted['Step'] == 'WAT'
+            extracted.loc[wat_mask, '环节'] = 'FT_成品库存'
+            extracted.loc[wat_mask, '库存数量'] = extracted.loc[wat_mask, '数量字段']
+            extracted.loc[wat_mask, '数量'] = pd.to_numeric(extracted.loc[wat_mask, '数量字段'], errors='coerce')
+
+            weice_data = pd.concat([weice_data, extracted], ignore_index=True)
+            results.append({"file": file_name, "status": "success", "msg": f"伟测文件《{file_name}》提取成功！"})
+        except PermissionError:
+            results.append({"file": file_name, "status": "error", "msg": f"伟测文件《{file_name}》权限不足，请关闭文件后重试"})
+        except Exception as e:
+            results.append({"file": file_name, "status": "error", "msg": f"伟测文件《{file_name}》提取失败：{str(e)}"})
+    return weice_data
 
 def get_target_columns(supplier, process):
     if supplier == "全部" and process == "全部":
         return supplier_process_field_map["全部"]["全部"]
     elif supplier == "全部":
-        for s in ["禾芯", "日荣", "弘润"]:
+        for s in ["禾芯", "日荣", "弘润", "伟测"]:
             if process in supplier_process_map[s]:
                 return supplier_process_field_map[s][process]
         return supplier_process_field_map["全部"]["全部"]
     else:
         return supplier_process_field_map[supplier][process]
 
-# ---------------------- 非线性缩放函数（强化小数值放大） ----------------------
+# ---------------------- 非线性缩放函数 ----------------------
 def nonlinear_scale(values):
     scaled = (values ** 0.2) * 300  
     scaled = np.maximum(scaled, 200)  
@@ -440,12 +511,9 @@ def render_charts(all_data):
     display_suppliers = summary_data['供应商'].unique().tolist() if supplier == "全部" else [supplier]
     device_list = summary_data['芯片名称/DEVICE NAME'].unique().tolist()
     
-    # ---- 核心修改：使用低饱和度(Pastel)的调色板 ----
-    # 组合多个柔和色系，确保颜色够用
     soft_palette = px.colors.qualitative.Pastel1 + px.colors.qualitative.Pastel2 + px.colors.qualitative.Set3
     device_color_map = {device: soft_palette[i % len(soft_palette)] for i, device in enumerate(device_list)}
 
-    # ---- 步骤1：计算全局最大柱子数量，确定统一的Span（跨度） ----
     max_process_count = 0
     for s in display_suppliers:
         temp_data = summary_data[summary_data['供应商'] == s]
@@ -454,16 +522,11 @@ def render_charts(all_data):
             if count > max_process_count:
                 max_process_count = count
     
-    # 保持不变：Zoom In (放大视图)
     global_span = max(max_process_count, 2.4) 
-
-    # ------------------ 灵活布局（Layout Centering） - 保持不变 ------------------
     cols = st.columns(2)
-    # ------------------------------------------------------------------
 
     for idx, s in enumerate(display_suppliers):
         col_to_use = cols[idx % 2]
-            
         with col_to_use:
             s_data = summary_data[summary_data['供应商'] == s].copy()
             if s_data.empty:
@@ -471,16 +534,10 @@ def render_charts(all_data):
                 continue
             
             s_data['scaled_quantity'] = nonlinear_scale(s_data['数量'].values)
-            
-            # ---- 步骤2：计算当前图表的中心点，动态设置Range实现内容居中 - 保持不变 ----
             current_categories = sorted(s_data['环节'].unique().tolist())
             n_bars = len(current_categories)
             
-            if n_bars > 0:
-                current_center = (n_bars - 1) / 2.0
-            else:
-                current_center = 0
-            
+            current_center = (n_bars - 1) / 2.0 if n_bars > 0 else 0
             half_span = global_span / 2.0
             x_range_min = current_center - half_span
             x_range_max = current_center + half_span
@@ -497,17 +554,14 @@ def render_charts(all_data):
                         textposition='outside',
                         textfont=dict(size=12, color='black', weight='bold'),
                         marker=dict(
-                            # ---- 核心修改：使用基于 Device 的颜色映射 ----
                             color=device_color_map[device], 
                             line=dict(color='black', width=0.5)
                         ),
                         hovertemplate=f"<b>DEVICE:</b> {device}<br><b>环节:</b> %{{x}}<br><b>真实数量:</b> %{{text}}<extra></extra>",
-                        # 保持不变：维持宽度 0.8
                         width=0.8
                     ))
             
             fig.update_layout(
-                # 保持不变：标题绝对居中
                 title=dict(
                     text=f'{s}',
                     x=0.5,
@@ -522,7 +576,6 @@ def render_charts(all_data):
                     tickfont=dict(size=14, color='black', weight='bold'),
                     tickangle=0,
                     showgrid=False,
-                    # 保持不变：维持动态计算的居中 Range
                     range=[x_range_min, x_range_max]
                 ),
                 yaxis=dict(
@@ -552,7 +605,7 @@ def render_data_tables(all_data):
     st.subheader("📋 数据表展示")
     st.sidebar.header("🔍 数据筛选")
     
-    all_suppliers = ['禾芯', '日荣', '弘润']
+    all_suppliers = ['禾芯', '日荣', '弘润', '伟测']
     supplier_list = ["全部"] + all_suppliers
     supplier = st.sidebar.selectbox("选择供应商", supplier_list, key="table_supplier_select")
     
@@ -653,6 +706,7 @@ def dashboard_page():
         hexin_data = process_hexin(results)
         rirong_data = process_rirong(results)
         hongrun_data = process_hongrun(results)
+        weice_data = process_weice(results)
 
     success_count = sum(1 for res in results if res["status"] == "success")
     error_count = len(results) - success_count
@@ -674,7 +728,7 @@ def dashboard_page():
                 else:
                     st.error(res["msg"])
 
-    all_data = pd.concat([hexin_data, rirong_data, hongrun_data], ignore_index=True)
+    all_data = pd.concat([hexin_data, rirong_data, hongrun_data, weice_data], ignore_index=True)
     tab1, tab2 = st.tabs(["📈 数据图", "📋 数据表"])
     
     with tab1:
@@ -699,25 +753,20 @@ def main_app():
             st.rerun()
     st.write(f"👤 当前用户: **{st.session_state.username}**")
     
-    # 样式修正：强制多选框标签为蓝色 (#2196F3)，文字为白色
     st.markdown("""
     <style>
-    /* 多选框 Tag 样式 - 容器 */
     .stMultiSelect div[data-baseweb="tag"] {
-        background-color: #2196F3 !important; /* 蓝色背景 */
+        background-color: #2196F3 !important;
         border: 1px solid #2196F3 !important;
         border-radius: 4px;
     }
-    /* Tag 内部文字颜色 */
     .stMultiSelect div[data-baseweb="tag"] span {
         color: white !important;
     }
-    /* Tag 关闭图标颜色 */
     .stMultiSelect div[data-baseweb="tag"] svg {
         fill: white !important;
         color: white !important;
     }
-    /* 额外的CSS选择器以防Streamlit结构微调 */
     span[data-baseweb="tag"] {
         background-color: #2196F3 !important;
         color: white !important;
