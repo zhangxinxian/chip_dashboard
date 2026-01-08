@@ -36,27 +36,57 @@ def migrate_old_users_data():
 def initialize_users():
     migrate_old_users_data()
     users_file = get_users_file_path()
+    
+    # 统一普通用户密码: intchains
+    common_password_hash = hashlib.sha256("intchains".encode()).hexdigest()
+    # 管理员密码: 123456 (保留一个管理员以便后续管理)
+    admin_password_hash = hashlib.sha256("123456".encode()).hexdigest()
+
+    # 定义默认用户列表
     default_users = {
         "xinxian.zhang@intchains.com": {
-            "password_hash": hashlib.sha256("123456".encode()).hexdigest(),
+            "password_hash": admin_password_hash,
             "permissions": ["view", "export", "manage_users", "change_password"]
-        },
-        "min.fang@intchains.com": {
-            "password_hash": hashlib.sha256("intchains".encode()).hexdigest(),
-            "permissions": ["view"]
         }
     }
+
+    # 需要添加的普通用户列表
+    ordinary_user_list = [
+        "min.fang@intchains.com",
+        "zhihao.zhang@intchains.com",
+        "miron.jin@intchains.com",
+        "jing.pan@intchains.com",
+        "weiwei.zhang@intchains.com",
+        "xianghui.zeng@intchains.com",
+        "roy.zhou@intchains.com",
+        "jerry.ding@intchains.com",
+        "leo.luo@intchains.com",
+        "zhengan.wu@intchains.com",
+        "huiwen.zuo@intchains.com"
+    ]
+
+    for email in ordinary_user_list:
+        default_users[email] = {
+            "password_hash": common_password_hash,
+            "permissions": ["view"]
+        }
+
     if not users_file.exists():
         save_users(default_users)
         return default_users
     try:
         with open(users_file, 'r', encoding='utf-8') as f:
             existing_users = json.load(f)
+            # 将默认列表中的用户合并/更新到现有数据中
             for username, user_info in default_users.items():
+                # 无论用户是否存在，都更新其默认权限和密码(确保新密码生效)
                 if username not in existing_users:
                     existing_users[username] = user_info
                 else:
                     existing_users[username]["permissions"] = user_info["permissions"]
+                    # 注意：这里强制更新了默认列表用户的密码，以符合您的需求
+                    existing_users[username]["password_hash"] = user_info["password_hash"]
+            
             save_users(existing_users)
             return existing_users
     except Exception as e:
@@ -303,9 +333,6 @@ def process_rirong(results):
     rirong_files = [f for f in os.listdir(folder_path) if f.startswith('ITS') and f.endswith(('.xls', '.xlsx'))]
     for file_name in rirong_files:
         file_path = os.path.join(folder_path, file_name)
-        if not os.path.isfile(file_path):
-            results.append({"file": file_name, "status": "error", "msg": f"日荣文件《{file_name}》路径不存在"})
-            continue
         engine = get_excel_engine(file_name)
         if not engine:
             results.append({"file": file_name, "status": "error", "msg": f"日荣文件《{file_name}》格式不支持"})
@@ -351,8 +378,6 @@ def process_rirong(results):
 
             rirong_data = pd.concat([rirong_data, wip_extracted, fg_extracted], ignore_index=True)
             results.append({"file": file_name, "status": "success", "msg": f"日荣文件《{file_name}》提取成功！"})
-        except PermissionError:
-            results.append({"file": file_name, "status": "error", "msg": f"日荣文件《{file_name}》权限不足，请关闭文件后重试"})
         except Exception as e:
             results.append({"file": file_name, "status": "error", "msg": f"日荣文件《{file_name}》提取失败：{str(e)}"})
     if rirong_data.empty:
@@ -373,9 +398,6 @@ def process_hongrun(results):
     hongrun_files = [f for f in os.listdir(folder_path) if 'CNEIC' in f and f.endswith(('.xls', '.xlsx'))]
     for file_name in hongrun_files:
         file_path = os.path.join(folder_path, file_name)
-        if not os.path.isfile(file_path):
-            results.append({"file": file_name, "status": "error", "msg": f"弘润文件《{file_name}》路径不存在"})
-            continue
         engine = get_excel_engine(file_name)
         if not engine:
             results.append({"file": file_name, "status": "error", "msg": f"弘润文件《{file_name}》格式不支持"})
@@ -411,8 +433,6 @@ def process_hongrun(results):
 
             hongrun_data = pd.concat([hongrun_data, extracted], ignore_index=True)
             results.append({"file": file_name, "status": "success", "msg": f"弘润文件《{file_name}》提取成功！"})
-        except PermissionError:
-            results.append({"file": file_name, "status": "error", "msg": f"弘润文件《{file_name}》权限不足，请关闭文件后重试"})
         except Exception as e:
             results.append({"file": file_name, "status": "error", "msg": f"弘润文件《{file_name}》提取失败：{str(e)}"})
     return hongrun_data
